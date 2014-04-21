@@ -331,6 +331,19 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
+bool
+thread_priority_greater(const struct list_elem *a,
+                        const struct list_elem *b,
+                        void *aux UNUSED)
+{
+  const struct thread *t_a = list_entry(a, struct thread, elem);
+  const struct thread *t_b = list_entry(b, struct thread, elem);
+  if (thread_mlfqs)
+    return t_a->priority > t_b->priority;
+  else
+    return t_a->priority > t_b->priority;
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
