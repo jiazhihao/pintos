@@ -203,7 +203,7 @@ thread_create (const char *name, int priority,
   thread_unblock (t);
 
   /* Yield to higher priority thread */
-  if (t->priority > thread_current()->priority)
+  if (thread_current()->eff_priority < t->eff_priority)
     thread_yield();
 
   return tid;
@@ -353,9 +353,18 @@ thread_priority_greater(const struct list_elem *a,
 void
 thread_set_priority (int new_priority) 
 {
+  struct thread *cur = thread_current();
+  bool yield_on_return = false;
   if (!thread_mlfqs) {
-    thread_current()->priority = new_priority;
+    cur->priority = new_priority;
+    if (new_priority > cur->eff_priority) {
+      cur->eff_priority = new_priority;
+    } else {
+      yield_on_return = true;
+    }
   }
+  if (yield_on_return)
+    thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -496,6 +505,7 @@ init_thread (struct thread *t, const char *name, int priority)
   }
   else {
     t->priority = priority;
+    t->eff_priority = priority;
   }
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -621,5 +631,5 @@ void calculate_priority_mlfqs (struct thread *t)
 {
   ASSERT (thread_mlfqs);
   t->priority = PRI_MAX - (t->recent_cpu / 4) - (t->nice * 2);
-  DIV_INT (t->recent_cpu, 4);
+  //DIV_INT (t->recent_cpu, 4);
 }
