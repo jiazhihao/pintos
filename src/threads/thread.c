@@ -91,7 +91,8 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
-  for (int i = 0; i <= PRI_MAX; i++) {
+  int i;
+  for (i = 0; i <= PRI_MAX; i++) {
     list_init (&ready_list[i]);
   }
   list_init (&all_list);
@@ -246,8 +247,7 @@ thread_unblock (struct thread *t)
   ASSERT (t->status == THREAD_BLOCKED);
   if (thread_mlfqs) {
     list_push_back (&ready_list[t->priority], &t->elem);
-  }
-  else {
+  } else {
     list_push_back (&ready_list[t->eff_priority], &t->elem);
   }
   t->status = THREAD_READY;
@@ -365,21 +365,20 @@ thread_priority_greater(const struct list_elem *a,
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
-{
+{  
   struct thread *cur = thread_current();
-  bool yield_on_return = false;
-  if (!thread_mlfqs) {
-    cur->priority = new_priority;
-    if (new_priority > cur->eff_priority) {
-      cur->eff_priority = new_priority;
-    } else {
-      yield_on_return = true;
-    }
+  cur->priority = new_priority;
+  if (new_priority > cur->eff_priority) {
+    thread_set_eff_priority(cur, new_priority);
   }
-  if (yield_on_return)
-    thread_yield();
 }
 
+/* Set effective priority of a thread. */
+void
+thread_set_eff_priority (struct thread *t, int eff_priority)
+{
+  t->eff_priority = eff_priority;
+}
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) 
@@ -546,7 +545,8 @@ alloc_frame (struct thread *t, size_t size)
 static struct thread *
 next_thread_to_run (void) 
 {
-  for (int i = PRI_MAX; i >= PRI_MAX; i--) {
+  int i;
+  for (i = PRI_MAX; i >= PRI_MIN; i--) {
     if (list_empty(&ready_list[i]))
       continue;
     return list_entry (list_pop_front (&ready_list[i]), struct thread, elem);
