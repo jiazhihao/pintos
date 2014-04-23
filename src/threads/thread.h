@@ -23,6 +23,9 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+#define NICE_MIN -20                    /* Lowest nice */
+#define NICE_MAX 20                     /* Highest nice */
+#define NICE_INI 0                      /* Initial nice */
 
 /* A kernel thread or user process.
 
@@ -89,8 +92,10 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
-    struct list_elem sleepelem;
-    int64_t wake_up_time;
+    struct list_elem sleepelem;         /* List element for the sleeping list */
+    int64_t wake_up_time;               /* The time this thread will wake up */
+    int nice;                           /* Nice value */
+    int recent_cpu;                     /* Recent cpu value */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
