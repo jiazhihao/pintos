@@ -91,7 +91,9 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
-  list_init (&ready_list);
+  for (int i = 0; i <= PRI_MAX; i++) {
+    list_init (&ready_list[i]);
+  }
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -242,7 +244,12 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  if (thread_mlfqs) {
+    list_push_back (&ready_list[t->priority], &t->elem);
+  }
+  else {
+    list_push_back (&ready_list[t->eff_priority], &t->elem);
+  }
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -312,8 +319,14 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  if (cur != idle_thread) {
+    if (thread_mlfqs) {
+      list_push_back (&ready_list[cur->priority], &cur->elem);
+    }
+    else {
+      list_push_back (&ready_list[cur->eff_priority], &cur->elem);
+    }
+  }
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -533,10 +546,12 @@ alloc_frame (struct thread *t, size_t size)
 static struct thread *
 next_thread_to_run (void) 
 {
-  if (list_empty (&ready_list))
-    return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  for (int i = PRI_MAX; i >= PRI_MAX; i--) {
+    if (list_empty(&ready_list[i]))
+      continue;
+    return list_entry (list_pop_front (&ready_list[i]), struct thread, elem);
+  }
+  return idle_thread;
 }
 
 /* Completes a thread switch by activating the new thread's page
