@@ -386,13 +386,19 @@ thread_set_priority (int new_priority)
   {
     return;
   }
+  bool yield_on_return = false;
   struct thread *cur = thread_current();
   if (new_priority == cur->priority)
     return;
   int old_priority = cur->priority;
   cur->priority = new_priority;
-  thread_set_eff_priority(cur, new_priority);
-  if (cur->eff_priority < old_priority)
+  if (new_priority > cur->eff_priority) {
+    thread_set_eff_priority(cur, new_priority);
+  } else {
+    thread_update_eff_priority(cur);
+    yield_on_return = true;
+  }
+  if (yield_on_return)
     thread_yield();
 }
 
@@ -403,16 +409,19 @@ thread_update_eff_priority (struct thread *t)
   ASSERT(!thread_mlfqs);
   int new_eff_priority = t->priority;
   struct list_elem *e;
-  for (e = list_begin (&t->acquired_locks_list);
-       e != list_end (&t->acquired_locks_list);
-       e = list_next (e)) {
-    printf("get inside loop of update_eff_priority.\n");
-    struct lock *l = list_entry (e, struct lock, lockelem);
-    struct thread *thread = list_entry (list_min (&l->semaphore.waiters, 
-                                  thread_priority_greater, NULL),
-                                  struct thread, elem);
-    if (new_eff_priority < thread->eff_priority)
-      new_eff_priority = thread->eff_priority;
+  if (!list_empty(&t->acquired_locks_list)) {
+    for (e = list_begin (&t->acquired_locks_list);
+         e != list_end (&t->acquired_locks_list);
+         e = list_next (e)) {
+      struct lock *l = list_entry (e, struct lock, lockelem);
+      if (!list_empty(&l->semaphore.waiters)) {
+        struct thread *thread = list_entry (list_min (&l->semaphore.waiters, 
+                                    thread_priority_greater, NULL),
+                                    struct thread, elem);
+        if (new_eff_priority < thread->eff_priority)
+          new_eff_priority = thread->eff_priority;
+      }
+    }
   }
   thread_set_eff_priority(t, new_eff_priority); 
 }
@@ -424,13 +433,30 @@ thread_set_eff_priority (struct thread *t, int eff_priority)
   if (eff_priority == t->eff_priority)
     return;
   t->eff_priority = eff_priority;
+
+  struct lock *l = t->lock_to_acquire;
+  if (l != NULL && l->holder != NULL) {
+    if (eff_priority > l->holder->eff_priority) {
+      thread_set_eff_priority (l->holder, eff_priority);
+    } else if (eff_priority < l->holder->eff_priority) {
+      thread_update_eff_priority(l->holder);
+    }
+  }
+  
+  if (t->status == THREAD_READY) {
+    list_remove (&t->elem);
+    list_push_back (&ready_list[t->eff_priority], &t->elem);
+  }
 }
 
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  if (thread_mlfqs)
+    return thread_current ()->priority;
+  else
+    return thread_current ()->eff_priority;
 }
 
 /* Sets the current thread's nice value to NICE. */

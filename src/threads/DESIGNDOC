@@ -8,7 +8,7 @@
 
 >> Fill in the names and email addresses of your group members.
 
-FirstName LastName <email@domain.example>
+Tai Guo <taig@stanford.edu>
 FirstName LastName <email@domain.example>
 FirstName LastName <email@domain.example>
 
@@ -29,6 +29,8 @@ FirstName LastName <email@domain.example>
 >> A1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+
+
 
 ---- ALGORITHMS ----
 
@@ -95,6 +97,22 @@ FirstName LastName <email@domain.example>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+In thread.c:
+#define NICE_MIN -20                    /* Lowest nice */
+#define NICE_MAX 20                     /* Highest nice */
+#define NICE_INI 0                      /* Initial nice */
+struct thread{
+  int nice;                           /* Nice value */
+  fixed_point_t recent_cpu;           /* Recent cpu value */
+}
+
+In thread.c
+fixed_point_t load_avg;
+
+All the nice, recent_cpu and load_avg are needed to calculate the priority 
+in the advanced algorithm.
+
+
 ---- ALGORITHMS ----
 
 >> C2: Suppose threads A, B, and C have nice values 0, 1, and 2.  Each
@@ -105,16 +123,16 @@ FirstName LastName <email@domain.example>
 timer  recent_cpu    priority   thread
 ticks   A   B   C   A   B   C   to run
 -----  --  --  --  --  --  --   ------
- 0
- 4
- 8
-12
-16
-20
-24
-28
-32
-36
+ 0      0   0   0  63  61  59     A
+ 4      4   0   0  62  61  59     A
+ 8      8   0   0  61  61  59     A
+12     12   0   0  60  61  59     B
+16     12   4   0  60  60  59     B
+20     12   8   0  60  59  59     A
+24     16   8   0  59  59  59     A
+28     20   8   0  58  59  59     C
+32     20   8   4  58  59  58     B
+36     20  12   4  58  58  58     A
 
 >> C3: Did any ambiguities in the scheduler specification make values
 >> in the table uncertain?  If so, what rule did you use to resolve
