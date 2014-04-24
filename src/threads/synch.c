@@ -41,6 +41,9 @@
 
    - up or "V": increment the value (and wake up one waiting
      thread, if any). */
+
+extern bool thread_mlfqs;
+
 void
 sema_init (struct semaphore *sema, unsigned value) 
 {
@@ -79,7 +82,7 @@ void
 sema_down_with_donation (struct semaphore *sema, struct lock *lock)
 {
   enum intr_level old_level;
-
+  ASSERT (!thread_mlfqs);
   ASSERT (sema != NULL);
   ASSERT (!intr_context());
 
@@ -153,8 +156,20 @@ sema_up (struct semaphore *sema)
 
     struct thread *next = list_entry (highest_priority_elem,
                                       struct thread, elem);
-    if (thread_current()->eff_priority < next->eff_priority)
-      yield_on_return = true;
+    if (thread_mlfqs)
+    {
+      if (thread_current ()->priority < next->priority)
+      {
+        yield_on_return = true;
+      }
+    }
+    else
+    {
+      if (thread_current ()->eff_priority < next->eff_priority)
+      {
+        yield_on_return = true;
+      }
+    }
     thread_unblock (next);
   }
   sema->value++;
@@ -167,6 +182,7 @@ sema_up (struct semaphore *sema)
 void
 sema_up_with_donation (struct semaphore *sema, struct lock *lock)
 {
+  ASSERT (!thread_mlfqs);
   enum intr_level old_level;
   bool yield_on_return = false;
   ASSERT (sema != NULL);
