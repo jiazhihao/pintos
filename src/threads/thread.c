@@ -367,10 +367,13 @@ void
 thread_set_priority (int new_priority) 
 {  
   struct thread *cur = thread_current();
+  if (new_priority == cur->priority)
+    return;
+  int old_priority = cur->priority;
   cur->priority = new_priority;
-  if (new_priority > cur->eff_priority) {
-    thread_set_eff_priority(cur, new_priority);
-  }
+  thread_set_eff_priority(cur, new_priority);
+  if (cur->eff_priority < old_priority)
+    thread_yield();
 }
 
 /* Set effective priority of a thread. */
@@ -379,6 +382,7 @@ thread_set_eff_priority (struct thread *t, int eff_priority)
 {
   t->eff_priority = eff_priority;
 }
+
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) 
