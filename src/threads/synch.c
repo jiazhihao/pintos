@@ -88,6 +88,7 @@ sema_down_with_donation (struct semaphore *sema, struct lock *lock)
   while (sema->value == 0)
   {
     list_push_back (&sema->waiters, &thread_current()->elem);
+    ASSERT(list_check(&sema->waiters));
     if (!thread_mlfqs) {
       if (thread_current()->eff_priority > lock_holder->eff_priority) {
         thread_set_eff_priority(lock_holder, thread_current()->eff_priority);
@@ -168,8 +169,11 @@ sema_up_with_donation (struct semaphore *sema, struct lock *lock)
     struct thread *next = list_entry (list_min (&sema->waiters, 
                                 thread_priority_greater, NULL),
                                 struct thread, elem);
+    list_remove(&next->elem);
+    ASSERT(list_check(&sema->waiters));
     struct thread *cur = thread_current();
     list_remove (&lock->lockelem);
+    ASSERT(list_check(&cur->acquired_locks_list));
 
     /* Current thread's priority may decrease in this case*/
     if (cur->eff_priority == next->eff_priority) {
@@ -267,7 +271,9 @@ lock_acquire (struct lock *lock)
   sema_down_with_donation (&lock->semaphore, lock);
   thread_current()->lock_to_acquire = NULL;
   lock->holder = thread_current ();
-  list_push_back (&thread_current()->acquired_locks_list, &lock->lockelem);
+  if (!list_contains_elem (&thread_current()->acquired_locks_list, &lock->lockelem))
+    list_push_back (&thread_current()->acquired_locks_list, &lock->lockelem);
+  ASSERT(list_check(&thread_current()->acquired_locks_list));
   intr_set_level(old_level);
 }
 

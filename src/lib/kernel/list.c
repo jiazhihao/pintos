@@ -312,6 +312,34 @@ list_empty (struct list *list)
   return list_begin (list) == list_end (list);
 }
 
+/* Returns true is LIST contains ELEM, false otherwise. */
+bool
+list_contains_elem (struct list *list, struct list_elem *elem)
+{
+  struct list_elem *it;
+  for (it = list_begin (list); it != list_end (list); it = list_next (it))
+  {
+    if (it == elem) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool
+list_check (struct list *list)
+{
+  struct list_elem *it, *prit = list_head(list);
+  bool check = true;
+  for (it = list_begin (list); it != list_end (list); it = list_next(it))
+  {
+    ASSERT(it->prev == prit);
+    ASSERT(prit->next == it);
+    prit = it;
+  }
+  return check;
+}
+
 /* Swaps the `struct list_elem *'s that A and B point to. */
 static void
 swap (struct list_elem **a, struct list_elem **b) 
