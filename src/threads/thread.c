@@ -11,7 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-#include "threads/fixed-point.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -30,13 +30,16 @@ static struct list ready_list[PRI_MAX + 1];
 static struct list all_list;
 
 /* Idle thread. */
-static struct thread *idle_thread;
+struct thread *idle_thread;
 
 /* Initial thread, the thread running init.c:main(). */
 static struct thread *initial_thread;
 
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
+
+/* load avg */
+fixed_point_t load_avg;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
@@ -102,6 +105,8 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+
+  load_avg = fix_int (0);
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -422,6 +427,7 @@ thread_set_nice (int nice)
   //TODO
   //recalculates the thread's priority based on the new value
   //If the running thread no longer has the highest priority, yields.
+  calculate_priority_mlfqs (thread_current (), NULL);
 }
 
 /* Returns the current thread's nice value. */
@@ -435,16 +441,16 @@ thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  ASSERT (thread_mlfqs);
+  return fix_round (fix_scale (load_avg, 100));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  ASSERT (thread_mlfqs);
+  return fix_round (fix_scale (thread_current ()->recent_cpu, 100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -534,13 +540,15 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->magic = THREAD_MAGIC;
   if (thread_mlfqs) {
-    if (t == initial_thread) {
+    if (t != initial_thread) {
       t->nice = 0;
+      t->recent_cpu = fix_int(0);
     }
     else {
-      t->nice = thread_get_nice();
+      t->nice = thread_current ()->nice;
+      t->recent_cpu = thread_current ()->recent_cpu;
     }
-    calculate_priority_mlfqs (t);
+    calculate_priority_mlfqs (t, NULL);
   }
   t->priority = priority;
   t->eff_priority = priority;
@@ -670,9 +678,49 @@ allocate_tid (void)
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
 /* Calculate priority in advanced scheduler*/
-void calculate_priority_mlfqs (struct thread *t)
+void calculate_priority_mlfqs (struct thread *t, void *aux UNUSED)
+{
+  int old_priority = t->priority;
+  ASSERT (thread_mlfqs);
+  t->priority = fix_trunc (fix_sub (fix_int (PRI_MAX - (t->nice * 2)),
+                            fix_unscale (t->recent_cpu, 4)));
+  if (t->priority > PRI_MAX)
+  {
+    t->priority = PRI_MAX;
+  }
+  if (t->priority < PRI_MIN)
+  {
+    t->priority = PRI_MIN;
+  }
+  if (t->priority != old_priority && t != thread_current () && t->status == THREAD_READY)
+  {
+    list_remove (&t->elem);
+    list_push_back (&ready_list[t->priority], &t->elem);
+  }
+}
+
+void calculate_load_avg ()
 {
   ASSERT (thread_mlfqs);
-  t->priority = PRI_MAX - (t->recent_cpu / 4) - (t->nice * 2);
-  //DIV_INT (t->recent_cpu, 4);
+  //load_avg = (59/60)*load_avg + (1/60)*ready_threads
+  int i, ready_threads=0;
+  for (i = 0; i < PRI_MAX + 1; i++)
+  {
+    ready_threads += list_size (&ready_list[i]);
+  }
+  if (thread_current () != idle_thread)
+  {
+    ready_threads++;
+  }
+  load_avg = fix_add (fix_mul (fix_frac (59, 60), load_avg),
+                      fix_frac (ready_threads, 60));
+}
+
+void calculate_recent_cpu (struct thread *t, void *aux UNUSED)
+{
+  ASSERT (thread_mlfqs);
+  //recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice
+  fixed_point_t coef = fix_scale (load_avg, 2);
+  coef = fix_div (coef, fix_add (coef, fix_int (1)));
+  t->recent_cpu = fix_add (fix_mul (coef, t->recent_cpu), fix_int(t->nice));
 }
