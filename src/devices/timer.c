@@ -27,6 +27,8 @@ static struct list sleep_list;
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 
+extern struct thread *idle_thread;
+
 static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
@@ -209,6 +211,23 @@ timer_interrupt (struct intr_frame *args UNUSED)
 
     thread_unblock(t);
     list_pop_front(&sleep_list);
+  }
+  if (thread_mlfqs)
+  {
+    struct thread *t = thread_current ();
+    if (t != idle_thread)
+    {
+      t->recent_cpu++;
+    }
+    if (timer_ticks () % TIMER_FREQ == 0)
+    {
+      calculate_load_avg ();
+      thread_foreach(calculate_recent_cpu, NULL);
+    }
+    if (timer_ticks () % 4 == 0)
+    {
+      thread_foreach (calculate_priority_mlfqs, NULL);
+    }
   }
 }
 
