@@ -390,9 +390,9 @@ thread_update_eff_priority (struct thread *t)
   for (e = list_begin (&t->acquired_locks_list);
        e != list_end (&t->acquired_locks_list);
        e = list_next (e)) {
-    if (list_empty(&l->semaphore.waitors))
-      continue;
     struct lock *l = list_entry (e, struct lock, lockelem);
+    if (list_empty(&l->semaphore.waiters))
+      continue;
     struct thread *thread = list_entry (list_min (&l->semaphore.waiters, 
                                   thread_priority_greater, NULL),
                                   struct thread, elem);
