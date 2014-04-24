@@ -380,13 +380,13 @@ thread_set_priority (int new_priority)
 int
 thread_update_eff_priority (struct thread *t)
 {
-  printf("get inside of update_eff_priority.\n");
   int new_eff_priority = t->priority;
   struct list_elem *e;
   for (e = list_begin (&t->acquired_locks_list);
        e != list_end (&t->acquired_locks_list);
        e = list_next (e)) {
-    printf("get inside loop of update_eff_priority.\n");
+    if (list_empty(&l->semaphore.waitors))
+      continue;
     struct lock *l = list_entry (e, struct lock, lockelem);
     struct thread *thread = list_entry (list_min (&l->semaphore.waiters, 
                                   thread_priority_greater, NULL),
