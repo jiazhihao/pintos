@@ -172,6 +172,7 @@ sema_up_with_donation (struct semaphore *sema, struct lock *lock)
   ASSERT (sema != NULL);
   
   old_level = intr_disable ();
+  list_remove (&lock->lockelem);
   if (!list_empty (&sema->waiters)) {
     struct thread *next = list_entry (list_min (&sema->waiters, 
                                 thread_priority_greater, NULL),
@@ -179,7 +180,6 @@ sema_up_with_donation (struct semaphore *sema, struct lock *lock)
     list_remove(&next->elem);
     ASSERT(list_check(&sema->waiters));
     struct thread *cur = thread_current();
-    list_remove (&lock->lockelem);
     ASSERT(list_check(&cur->acquired_locks_list));
 
     /* Current thread's priority may decrease in this case*/

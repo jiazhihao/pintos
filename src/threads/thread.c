@@ -403,16 +403,19 @@ thread_update_eff_priority (struct thread *t)
   ASSERT(!thread_mlfqs);
   int new_eff_priority = t->priority;
   struct list_elem *e;
-  for (e = list_begin (&t->acquired_locks_list);
-       e != list_end (&t->acquired_locks_list);
-       e = list_next (e)) {
-    printf("get inside loop of update_eff_priority.\n");
-    struct lock *l = list_entry (e, struct lock, lockelem);
-    struct thread *thread = list_entry (list_min (&l->semaphore.waiters, 
-                                  thread_priority_greater, NULL),
-                                  struct thread, elem);
-    if (new_eff_priority < thread->eff_priority)
-      new_eff_priority = thread->eff_priority;
+  if (!list_empty(&t->acquired_locks_list)) {
+    for (e = list_begin (&t->acquired_locks_list);
+         e != list_end (&t->acquired_locks_list);
+         e = list_next (e)) {
+      struct lock *l = list_entry (e, struct lock, lockelem);
+      if (!list_empty(&l->semaphore.waiters)) {
+        struct thread *thread = list_entry (list_min (&l->semaphore.waiters, 
+                                    thread_priority_greater, NULL),
+                                    struct thread, elem);
+        if (new_eff_priority < thread->eff_priority)
+          new_eff_priority = thread->eff_priority;
+      }
+    }
   }
   thread_set_eff_priority(t, new_eff_priority); 
 }
@@ -430,14 +433,17 @@ thread_set_eff_priority (struct thread *t, int eff_priority)
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  if (thread_mlfqs)
+    return thread_current ()->priority;
+  else
+    return thread_current ()->eff_priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
 void
 thread_set_nice (int nice) 
 {
-  ASSERT (thread_mlfqs);
+  ASSERT(thread_mlfqs);
   ASSERT (nice <= NICE_MAX && nice >= NICE_MIN);
   thread_current()->nice = nice;
   calculate_priority_mlfqs (thread_current (), NULL);
@@ -558,7 +564,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->magic = THREAD_MAGIC;
   if (thread_mlfqs) {
-    if (t == initial_thread) {
+    if (t != initial_thread) {
       t->nice = 0;
       t->recent_cpu = fix_int(0);
     }
@@ -714,7 +720,7 @@ void calculate_priority_mlfqs (struct thread *t, void *aux UNUSED)
   {
     t->priority = PRI_MIN;
   }
-  if (t->priority != old_priority && t->status == THREAD_READY && t != thread_current ())
+  if (t->priority != old_priority && t != thread_current () && t->status == THREAD_READY)
   {
     list_remove (&t->elem);
     list_push_back (&ready_list[t->priority], &t->elem);
