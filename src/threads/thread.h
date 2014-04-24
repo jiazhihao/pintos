@@ -158,5 +158,6 @@ int thread_get_load_avg (void);
 void calculate_recent_cpu (struct thread *t, void *aux UNUSED);
 void calculate_priority_mlfqs (struct thread *t, void *aux UNUSED);
 void calculate_load_avg (void);
+bool need_yield (void);
 
 #endif /* threads/thread.h */

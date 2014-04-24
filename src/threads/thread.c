@@ -173,7 +173,7 @@ thread_print_stats (void)
    Priority scheduling is the goal of Problem 1-3. */
 tid_t
 thread_create (const char *name, int priority,
-               thread_func *function, void *aux) 
+               thread_func *function, void *aux)
 {
   struct thread *t;
   struct kernel_thread_frame *kf;
@@ -211,9 +211,20 @@ thread_create (const char *name, int priority,
   thread_unblock (t);
 
   /* Yield to higher priority thread */
-  if (thread_current()->eff_priority < t->eff_priority)
-    thread_yield();
-
+  if (thread_mlfqs)
+  {
+    if (need_yield())
+    {
+      thread_yield ();
+    }
+  }
+  else
+  {
+    if (thread_current ()->eff_priority < t->eff_priority)
+    {
+      thread_yield ();
+    }
+  }
   return tid;
 }
 
@@ -371,6 +382,10 @@ thread_priority_greater(const struct list_elem *a,
 void
 thread_set_priority (int new_priority) 
 {  
+  if (thread_mlfqs)
+  {
+    return;
+  }
   struct thread *cur = thread_current();
   if (new_priority == cur->priority)
     return;
@@ -423,17 +438,20 @@ void
 thread_set_nice (int nice) 
 {
   ASSERT(thread_mlfqs);
+  ASSERT (nice <= NICE_MAX && nice >= NICE_MIN);
   thread_current()->nice = nice;
-  //TODO
-  //recalculates the thread's priority based on the new value
-  //If the running thread no longer has the highest priority, yields.
   calculate_priority_mlfqs (thread_current (), NULL);
+  if (need_yield ())
+  {
+    thread_yield ();
+  }
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
+  ASSERT (thread_mlfqs);
   return thread_current()->nice;
 }
 
@@ -550,7 +568,10 @@ init_thread (struct thread *t, const char *name, int priority)
     }
     calculate_priority_mlfqs (t, NULL);
   }
-  t->priority = priority;
+  else
+  {
+    t->priority = priority;
+  }
   t->eff_priority = priority;
   t->lock_to_acquire = NULL;
   list_init(&t->acquired_locks_list);
@@ -680,6 +701,7 @@ uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 /* Calculate priority in advanced scheduler*/
 void calculate_priority_mlfqs (struct thread *t, void *aux UNUSED)
 {
+  ASSERT (thread_mlfqs);
   int old_priority = t->priority;
   ASSERT (thread_mlfqs);
   t->priority = fix_trunc (fix_sub (fix_int (PRI_MAX - (t->nice * 2)),
@@ -723,4 +745,19 @@ void calculate_recent_cpu (struct thread *t, void *aux UNUSED)
   fixed_point_t coef = fix_scale (load_avg, 2);
   coef = fix_div (coef, fix_add (coef, fix_int (1)));
   t->recent_cpu = fix_add (fix_mul (coef, t->recent_cpu), fix_int(t->nice));
+}
+
+bool need_yield ()
+{
+  ASSERT (thread_mlfqs);
+  int i;
+  struct thread *t = thread_current();
+  for (i = PRI_MAX; i > t->priority; i--)
+  {
+    if (!list_empty (&ready_list[i]))
+    {
+      return true;
+    }
+  }
+  return false;
 }

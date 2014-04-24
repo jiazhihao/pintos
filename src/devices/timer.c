@@ -228,6 +228,10 @@ timer_interrupt (struct intr_frame *args UNUSED)
     {
       thread_foreach (calculate_priority_mlfqs, NULL);
     }
+    if (need_yield ())
+    {
+      intr_yield_on_return();
+    }
   }
 }
 
