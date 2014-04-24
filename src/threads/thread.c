@@ -400,6 +400,7 @@ thread_set_priority (int new_priority)
 void
 thread_update_eff_priority (struct thread *t)
 {
+  ASSERT(!thread_mlfqs);
   int new_eff_priority = t->priority;
   struct list_elem *e;
   if (!list_empty(&t->acquired_locks_list)) {
