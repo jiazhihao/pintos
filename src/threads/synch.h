@@ -13,8 +13,10 @@ struct semaphore
 
 void sema_init (struct semaphore *, unsigned value);
 void sema_down (struct semaphore *);
+void sema_down_with_donation (struct semaphore *, struct lock *);
 bool sema_try_down (struct semaphore *);
 void sema_up (struct semaphore *);
+void sema_up_with_donation (struct semaphore *, struct lock *);
 void sema_self_test (void);
 
 /* Lock. */
