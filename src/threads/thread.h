@@ -95,6 +95,9 @@ struct thread
     struct list_elem allelem;           /* List element for all threads list. */
     struct list_elem sleepelem;         /* List element for the sleeping list */
     int64_t wake_up_time;               /* The time this thread will wake up */
+    struct list acquired_locks_list;    /* Locks acquired by this thread. */
+    struct lock *lock_to_acquire;       /* The lock this thread is waiting on. */
+
     int nice;                           /* Nice value */
     int recent_cpu;                     /* Recent cpu value */
 
@@ -143,6 +146,9 @@ bool thread_priority_greater(const struct list_elem *a,
                       void *aux UNUSED);
 int thread_get_priority (void);
 void thread_set_priority (int);
+
+int thread_update_eff_priority (struct thread *t);
+void thread_set_eff_priority (struct thread *t, int eff_priority);
 
 int thread_get_nice (void);
 void thread_set_nice (int);

@@ -110,17 +110,56 @@ void
 sema_up (struct semaphore *sema) 
 {
   enum intr_level old_level;
-
+  bool yield_on_return = false;
   ASSERT (sema != NULL);
-
+  
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)) 
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+  if (!list_empty (&sema->waiters)) {
+    struct thread *next = list_entry (list_min (&sema->waiters, 
+                                thread_priority_greater, NULL),
+                                struct thread, elem);
+    if (thread_current()->eff_priority < next->eff_priority)
+      yield_on_return = true;
+    thread_unblock (next);
+  }
   sema->value++;
   intr_set_level (old_level);
+
+  if (yield_on_return)
+    thread_yield();
 }
 
+void
+sema_up_with_donation (struct semaphore *sema, struct lock *lock)
+{
+  enum intr_level old_level;
+  bool yield_on_return = false;
+  ASSERT (sema != NULL);
+  
+  old_level = intr_disable ();
+  if (!list_empty (&sema->waiters)) {
+    struct thread *next = list_entry (list_min (&sema->waiters, 
+                                thread_priority_greater, NULL),
+                                struct thread, elem);
+    struct thread *cur = thread_current();
+    ASSERT (lock->holder == cur);
+    list_remove(lock->lockelem);
+
+    /* Current thread's priority may decrease in this case*/
+    if (cur->eff_priority == next->eff_priority) {
+      thread_update_eff_priority(cur); 
+    }
+
+    if (curr->eff_priority < next->eff_priority)
+      yield_on_return = true; 
+    thread_unblock (next);
+  }
+  sema->value++;
+  intr_set_level (old_level);
+
+  if (yield_on_return)
+    thread_yield();
+}
 static void sema_test_helper (void *sema_);
 
 /* Self-test for semaphores that makes control "ping-pong"
@@ -233,7 +272,7 @@ lock_release (struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   lock->holder = NULL;
-  sema_up (&lock->semaphore);
+  sema_up_with_donation (&lock->semaphore, lock);
 }
 
 /* Returns true if the current thread holds LOCK, false

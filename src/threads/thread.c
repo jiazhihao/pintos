@@ -359,7 +359,7 @@ thread_priority_greater(const struct list_elem *a,
   if (thread_mlfqs)
     return t_a->priority > t_b->priority;
   else
-    return t_a->priority > t_b->priority;
+    return t_a->eff_priority > t_b->eff_priority;
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
@@ -376,10 +376,31 @@ thread_set_priority (int new_priority)
     thread_yield();
 }
 
+/* Get effective priority of a thread. */
+int
+thread_update_eff_priority (struct thread *t)
+{
+  int new_eff_priority = t->priority;
+  struct list_elem *e;
+  for( e = list_begin (&t->acquired_locks_list);
+       e != list_end (&t->acquired_locks_list);
+       e = list_next (e) ) {
+    struct lock *l = list_entry (e, struct lock, lockelem);
+    struct thread *thread = list_entry (list_min (&l->semaphore.waiters, 
+                                  thread_priority_greater, NULL),
+                                  struct thread, elem);
+    if (new_eff_priority < thread->eff_priority)
+      new_eff_priority = thread->eff_priority;
+  }
+  thread_set_eff_priority(t, new_eff_priority); 
+}
+
 /* Set effective priority of a thread. */
 void
 thread_set_eff_priority (struct thread *t, int eff_priority)
 {
+  if (eff_priority == t->eff_priority)
+    return;
   t->eff_priority = eff_priority;
 }
 
