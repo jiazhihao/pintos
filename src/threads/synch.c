@@ -168,6 +168,7 @@ sema_up_with_donation (struct semaphore *sema, struct lock *lock)
     struct thread *next = list_entry (list_min (&sema->waiters, 
                                 thread_priority_greater, NULL),
                                 struct thread, elem);
+    list_remove(&next->elem);
     struct thread *cur = thread_current();
     list_remove (&lock->lockelem);
 
@@ -267,7 +268,8 @@ lock_acquire (struct lock *lock)
   sema_down_with_donation (&lock->semaphore, lock);
   thread_current()->lock_to_acquire = NULL;
   lock->holder = thread_current ();
-  list_push_back (&thread_current()->acquired_locks_list, &lock->lockelem);
+  if (!list_contains_elem (&thread_current()->acquired_locks_list, &lock->lockelem))
+    list_push_back (&thread_current()->acquired_locks_list, &lock->lockelem);
   intr_set_level(old_level);
 }
 
