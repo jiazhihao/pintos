@@ -4,6 +4,8 @@
 #include <list.h>
 #include <stdbool.h>
 
+struct lock;
+
 /* A counting semaphore. */
 struct semaphore 
   {
