@@ -397,22 +397,24 @@ thread_set_priority (int new_priority)
 }
 
 /* Get effective priority of a thread. */
-int
+void
 thread_update_eff_priority (struct thread *t)
 {
   int new_eff_priority = t->priority;
   struct list_elem *e;
-  for (e = list_begin (&t->acquired_locks_list);
-       e != list_end (&t->acquired_locks_list);
-       e = list_next (e)) {
-    struct lock *l = list_entry (e, struct lock, lockelem);
-    if (list_empty(&l->semaphore.waiters))
-      continue;
-    struct thread *thread = list_entry (list_min (&l->semaphore.waiters, 
-                                  thread_priority_greater, NULL),
-                                  struct thread, elem);
-    if (new_eff_priority < thread->eff_priority)
-      new_eff_priority = thread->eff_priority;
+  if (!list_empty(&t->acquired_locks_list)) {
+    for (e = list_begin (&t->acquired_locks_list);
+         e != list_end (&t->acquired_locks_list);
+         e = list_next (e)) {
+      struct lock *l = list_entry (e, struct lock, lockelem);
+      if (!list_empty(&l->semaphore.waiters)) {
+        struct thread *thread = list_entry (list_min (&l->semaphore.waiters, 
+                                    thread_priority_greater, NULL),
+                                    struct thread, elem);
+        if (new_eff_priority < thread->eff_priority)
+          new_eff_priority = thread->eff_priority;
+      }
+    }
   }
   thread_set_eff_priority(t, new_eff_priority); 
 }
@@ -430,7 +432,10 @@ thread_set_eff_priority (struct thread *t, int eff_priority)
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  if (thread_mlfqs)
+    return thread_current ()->priority;
+  else
+    return thread_current ()->eff_priority;
 }
 
 /* Sets the current thread's nice value to NICE. */

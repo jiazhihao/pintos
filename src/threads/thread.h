@@ -148,7 +148,7 @@ bool thread_priority_greater(const struct list_elem *a,
 int thread_get_priority (void);
 void thread_set_priority (int);
 
-int thread_update_eff_priority (struct thread *t);
+void thread_update_eff_priority (struct thread *t);
 void thread_set_eff_priority (struct thread *t, int eff_priority);
 
 int thread_get_nice (void);
