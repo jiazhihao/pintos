@@ -67,12 +67,35 @@ sema_down (struct semaphore *sema)
 
   old_level = intr_disable ();
   while (sema->value == 0) 
-    {
-      list_insert_ordered (&sema->waiters, &thread_current ()->elem,
-                           thread_priority_greater, NULL);
-      thread_block ();
-    }
+  {
+    list_push_back (&sema->waiters, &thread_current()->elem);
+    thread_block ();
+  }
   sema->value--;
+  intr_set_level (old_level);
+}
+
+void
+sema_down_with_donation (struct semaphore *sema, struct lock *lock)
+{
+  enum intr_level old_level;
+
+  ASSERT (sema != NULL);
+  ASSERT (!intr_context());
+
+  old_level = intr_disable();
+  struct thread *lock_holder = lock->holder;
+  while (sema->value == 0)
+  {
+    list_push_back (&sema->waiters, &thread_current()->elem);
+    if (!thread_mlfqs) {
+      if (thread_current()->eff_priority > lock_holder->eff_priority) {
+        thread_set_eff_priority(lock_holder, thread_current()->eff_priority);
+      }
+    }
+    thread_block();
+  }
+  sema_value--;
   intr_set_level (old_level);
 }
 
@@ -197,8 +220,12 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  old_level = intr_disable();
+  thread_current()->lock_to_acquire = lock;
   sema_down (&lock->semaphore);
+  thread_current()->lock_to_acquire = NULL;
   lock->holder = thread_current ();
+  intr_set_level(old_level);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
