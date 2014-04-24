@@ -217,7 +217,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
     struct thread *t = thread_current ();
     if (t != idle_thread)
     {
-      t->recent_cpu++;
+      t->recent_cpu = fix_add(t->recent_cpu, fix_int(1));
     }
     if (timer_ticks () % TIMER_FREQ == 0)
     {

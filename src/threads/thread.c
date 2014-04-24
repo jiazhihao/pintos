@@ -11,7 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-#include "threads/fixed-point.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -39,7 +39,7 @@ static struct thread *initial_thread;
 static struct lock tid_lock;
 
 /* load avg */
-int load_avg;
+fixed_point_t load_avg;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
@@ -106,7 +106,7 @@ thread_init (void)
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 
-  load_avg = 0;
+  load_avg = fix_int (0);
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -427,7 +427,7 @@ thread_set_nice (int nice)
   //TODO
   //recalculates the thread's priority based on the new value
   //If the running thread no longer has the highest priority, yields.
-  calculate_priority_mlfqs (thread_current ());
+  calculate_priority_mlfqs (thread_current (), NULL);
 }
 
 /* Returns the current thread's nice value. */
@@ -442,7 +442,7 @@ int
 thread_get_load_avg (void) 
 {
   ASSERT (thread_mlfqs);
-  return CONVERT_TO_INT_NEAREST(MUL_INT (load_avg, 100));
+  return fix_round (fix_scale (load_avg, 100));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
@@ -450,7 +450,7 @@ int
 thread_get_recent_cpu (void) 
 {
   ASSERT (thread_mlfqs);
-  return CONVERT_TO_INT_NEAREST (MUL_INT (thread_current ()->recent_cpu, 100));
+  return fix_round (fix_scale (thread_current ()->recent_cpu, 100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -542,13 +542,13 @@ init_thread (struct thread *t, const char *name, int priority)
   if (thread_mlfqs) {
     if (t != initial_thread) {
       t->nice = 0;
-      t->recent_cpu = 0;
+      t->recent_cpu = fix_int(0);
     }
     else {
       t->nice = thread_current ()->nice;
       t->recent_cpu = thread_current ()->recent_cpu;
     }
-    calculate_priority_mlfqs (t);
+    calculate_priority_mlfqs (t, NULL);
   }
   t->priority = priority;
   t->eff_priority = priority;
@@ -678,13 +678,12 @@ allocate_tid (void)
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
 /* Calculate priority in advanced scheduler*/
-void calculate_priority_mlfqs (struct thread *t)
+void calculate_priority_mlfqs (struct thread *t, void *aux UNUSED)
 {
-  int i;
   int old_priority = t->priority;
   ASSERT (thread_mlfqs);
-  t->priority = CONVERT_TO_INT_DOWN (
-    ADD_INT (-DIV_INT (t->recent_cpu, 4), PRI_MAX - (t->nice * 2)));
+  t->priority = fix_trunc (fix_sub (fix_int (PRI_MAX - (t->nice * 2)),
+                            fix_unscale (t->recent_cpu, 4)));
   if (t->priority > PRI_MAX)
   {
     t->priority = PRI_MAX;
@@ -713,15 +712,15 @@ void calculate_load_avg ()
   {
     ready_threads++;
   }
-  load_avg = ADD_FP (DIV_INT (MUL_INT (load_avg, 59), 60), 
-                     DIV_INT (CONVERT_TO_FP (ready_threads), 60));
+  load_avg = fix_add (fix_mul (fix_frac (59, 60), load_avg),
+                      fix_frac (ready_threads, 60));
 }
 
-void calculate_recent_cpu (struct thread *t)
+void calculate_recent_cpu (struct thread *t, void *aux UNUSED)
 {
   ASSERT (thread_mlfqs);
   //recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice
-  int coef = MUL_INT (load_avg, 2);
-  coef = DIV_FP (coef, ADD_INT (coef, 1));
-  t->recent_cpu = ADD_INT (MUL_FP (coef, t->recent_cpu), t->nice);
+  fixed_point_t coef = fix_scale (load_avg, 2);
+  coef = fix_div (coef, fix_add (coef, fix_int (1)));
+  t->recent_cpu = fix_add (fix_mul (coef, t->recent_cpu), fix_int(t->nice));
 }
