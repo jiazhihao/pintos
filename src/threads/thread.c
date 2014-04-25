@@ -397,6 +397,7 @@ thread_set_priority (int new_priority)
   struct thread *cur = thread_current ();
   if (new_priority == cur->priority)
     return;
+  enum intr_level old_level = intr_disable ();
   cur->priority = new_priority;
   if (new_priority > cur->eff_priority)
   {
@@ -409,12 +410,14 @@ thread_set_priority (int new_priority)
   }
   if (yield_on_return)
     thread_yield ();
+  intr_set_level (old_level);
 }
 
 /* Get effective priority of a thread. */
 void
 thread_update_eff_priority (struct thread *t)
 {
+  ASSERT (intr_get_level () == INTR_OFF);
   ASSERT (!thread_mlfqs);
   int new_eff_priority = t->priority;
   struct list_elem *e;
@@ -442,6 +445,7 @@ thread_update_eff_priority (struct thread *t)
 void
 thread_set_eff_priority (struct thread *t, int eff_priority)
 {
+  ASSERT (intr_get_level () == INTR_OFF);
   if (eff_priority == t->eff_priority)
     return;
   t->eff_priority = eff_priority;

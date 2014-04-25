@@ -17,6 +17,8 @@ Zhihao Jia <zhihao@stanford.edu>
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
+None.
+
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
@@ -32,16 +34,18 @@ None that we can think of.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-- add memebers to struct thread in 'thread.h'
-    /* List element for the sleeping list */
-    struct list_elem sleepelem;
+-- thread.h --
+New memebers in struct thread:
+  /* List element for the sleeping list */
+  struct list_elem sleepelem;
     
-    /* The time this thread will wake up */
-    int64_t wake_up_time;
+  /* The time this thread will wake up */
+  int64_t wake_up_time;
 
-- add new struct in 'timer.c'
-    /* List of all threads that are blocked in timer_sleep*/
-    static struct list sleep_list;
+-- timer.c --
+New struct in 'timer.c'
+  /* List of all threads that are blocked in timer_sleep*/
+  static struct list sleep_list;
 
 ---- ALGORITHMS ----
 
@@ -125,20 +129,146 @@ allocation during the manipulation on sleep list.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+-- thread.h --
+New members in struct thread:
+  int eff_priority;                 /* Effective priority. */
+  struct list acquired_locks_list;  /* Locks acquired by this thread. */
+                                       Used for priority donation. */
+  struct lock *lock_to_acquire;     /* The lock this thread is waiting on. */
+                                       Used for priority chaining. */
+-- synch.h --
+New member in struct lock:
+  struct list_elem lockelem;        /* List element for acquired_locks_list. */
+
+-- thread.c --
+Changes to static vairable ready_list:
+  static struct list ready_list[PRI_MAX+1]; /* One list for each priority. */
+
+
 >> B2: Explain the data structure used to track priority donation.
 >> Use ASCII art to diagram a nested donation.  (Alternately, submit a
 >> .png file.)
 
+We use three extra data structures to realize priority donation. Priority 
+donations (i.e. information on which threads current thread donates to and 
+which threads donate to current threads) are not explicitly checked. 
+Instead we records which lock a thread is waiting on (lock_to_acquire) and
+what locks a thread hold (acquired_locks_list) and use them to infer the
+priority donations.
+
+(1) int eff_priority in struct thread
+The struct member eff_priority is effective priority of a thread which is the 
+maximum of the thread's generic priority and eff_priorities of the threads 
+waiting on it's acquired locks (aka. donated priorities). All priority 
+scheduling decisions are made by looking at eff_priorities.
+
+(2) struct list acquired_locks_list in struct thread
+The acquired_locks_list is used when we need to update a thread's eff_priority,
+which happens during the donation "give-back" after releasing a held lock.
+
+(3) struct lock *lock_to_acquire in struct thread
+The lock_to_acquire of a thread is the lock the thread is waiting on. It is 
+added for donation chaining / nested donation, which will be more explained
+in B4 in more detail.
+
+There are two cases that need careful considerations for priority donation 
+tracking: nested donation and multiple-source donations.
+
+(a) Nested donation
+Nested donation is when a donation in lock_acquire triggers a chaining 
+effect of priority donation. We used lock_to_acquire to determine whether
+and to which thread we will do nested donatation.
+
+When current thread (Thread 1 in diagram below) acquires a lock (Lock A) and 
+blocks, if it's eff_priority is greater than the lock holder (Thread 2)'s 
+eff_priority, Thread 1 will "donate" priority to the Thread 2 by calling a 
+function to set Thread 2's eff_priority, which considers nested donation.
+Inside the set function, we check if this Thread 2 is also waiting on a lock
+by looking at if it's lock_to_acquire is set. If it is, like the case in the 
+diagram, Thread 2 will "donate" priority to the lock's holder (Thread 3) by 
+recursively calling the set eff_priority function. 
+
+  * Thread 1 *         * Thread 2 *          * Thread 3 *
+            \             /      \             /       \         
+          waiting on  held by  waiting on  held by   waiting on
+              \         /          \         /           \
+              [ Lock A ]           [ Lock B ]            ...
+
+(b) Multiple-source donations
+Multiple-source donations happens when multiple threads are waiting on the 
+same lock. The effective priority will be the highest eff_priority of the 
+donators/lock waiters. One thing need attention is to update a multi-donated
+thread's eff_priority after it releases a lock. acquired_locks_list, together 
+with lock's sema.waiters are used for eff_priority update.
+
+To illustrate the process of updating a multi-donated thread's eff_priority
+in releasing a lock, we will look at the diagram as an example. In the diagram
+below, three threads T1, T2, T3 are waiting on Lock A held by T0 and T4 is 
+waiting on Lock B held also by T0.
+Due to donation rule T0 has high priority since High T1 is waiting on its lock. 
+However, when T0 releases Lock A, High T1 will get the lock and the donation 
+is no longer valid. In this case, T0 needs to sweep locks in it's 
+acquired_locks_list and go through each thread waiting on those locks to see 
+what the next highest donated priority is. In this diagram, it's Medium T4 
+waiting on T0's acquired Lock B. 
+
+  * High T1 *         * Low T0 *
+        \             /         \
+      waiting on  held by      held by
+          \         /             \
+          [ Lock A ]              [ Lock B ]
+          /         \                      \
+      waiting on  waiting on             waiting on
+        /             \                      \
+  * Low T2 *         * Low T3 *          * Medium T4 *
+
+ 
 ---- ALGORITHMS ----
 
 >> B3: How do you ensure that the highest priority thread waiting for
 >> a lock, semaphore, or condition variable wakes up first?
 
+During a lock release (in sema_up), sema_up or cond_signal (in sema_up) we 
+will extract the highest eff_priority thread from waiting list and yield 
+current thread if it's larger than current eff_priority. 
+
+We used list_min function and thread_priority_greater comparator to get 
+the highest eff_priority thread from the waiting list.
+The reason we are not using list_push_back and list_inset_ordered is that
+the thread's eff_priority may change over time and the order at the time
+of insertion may be outdated. Use list_min inside a critical zone (interrupt
+diabled) gurantees we will get the up-to-date highest eff_priority thread.
+
+Also, in order to garantee the ready_list is up-to-date, we update the 
+ready_list everytime we reset a thread's eff_priority so that the highest
+eff_priority thread is guranteed to run first after a thread calls 
+thread_yield.
+
+
 >> B4: Describe the sequence of events when a call to lock_acquire()
 >> causes a priority donation.  How is nested donation handled?
 
+When current thread acquires a lock and blocks, if it's eff_priority is 
+greater than the lock holder's eff_priority, current thread will "donate" 
+priority to the lock holder by calling a function to set its eff_priority, 
+which also considers nested donation. Inside the set function, we check 
+if this thread (the lock holder) is also waiting on a lock.
+If it is and it's priority is higher than that of the lock's holder, 
+it will nestly "donate" by recursively calling the set eff_priority function.
+
 >> B5: Describe the sequence of events when lock_release() is called
 >> on a lock that a higher-priority thread is waiting for.
+
+When current thread releases a lock, it extracts the highest priority thread 
+(t1) from the lock's waiters list. If t1's eff_priority equals to the
+current's, then it's possible that current's eff_priority is the result of 
+donation from t1 and may need to "give back" the donation in releasing 
+the lock. In this case, we will call thread_update_eff_priority to update 
+current thread's eff_priority. What this function does is checking all waiters 
+on locks acquired by current thread and see what is the highest eff_priority 
+of these waiters and set current thread's eff_priority to it. It's possible
+for a nested donation to happen in this case as well.
+
 
 ---- SYNCHRONIZATION ----
 
@@ -214,16 +344,20 @@ we don't have to allocate memory when a lock is added into acquired_lock_list.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-In thread.c:
+-- thread.h --
+New defines:
 #define NICE_MIN -20                    /* Lowest nice */
 #define NICE_MAX 20                     /* Highest nice */
 #define NICE_INI 0                      /* Initial nice */
+
+New members in struct thread:
 struct thread{
   int nice;                           /* Nice value */
   fixed_point_t recent_cpu;           /* Recent cpu value */
 }
 
-In thread.c
+-- thread.c --
+New global variable:
 fixed_point_t load_avg;
 
 All the nice, recent_cpu and load_avg are needed to calculate the priority 
