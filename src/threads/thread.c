@@ -372,6 +372,7 @@ thread_foreach (thread_action_func *func, void *aux)
   }
 }
 
+/* Compare function for thread's priority or eff_priority. */
 bool
 thread_priority_greater (const struct list_elem *a,
                         const struct list_elem *b,
@@ -413,7 +414,7 @@ thread_set_priority (int new_priority)
   intr_set_level (old_level);
 }
 
-/* Get effective priority of a thread. */
+/* Update a thread's eff_priority by looking into acquired_locks_list. */
 void
 thread_update_eff_priority (struct thread *t)
 {
@@ -441,7 +442,7 @@ thread_update_eff_priority (struct thread *t)
   thread_set_eff_priority (t, new_eff_priority);
 }
 
-/* Set effective priority of a thread. */
+/* Set effective priority of a thread. Do nested setting if nececessary. */
 void
 thread_set_eff_priority (struct thread *t, int eff_priority)
 {
@@ -765,17 +766,18 @@ void calculate_priority_mlfqs (struct thread *t, void *aux UNUSED)
   {
     t->priority = PRI_MIN;
   }
-  if (t->priority != old_priority && t->status == THREAD_READY && t != thread_current ())
+  if (t->priority != old_priority && t->status == THREAD_READY 
+      && t != thread_current ())
   {
     list_remove (&t->elem);
     list_push_back (&ready_list[t->priority], &t->elem);
   }
 }
 
+/* calculate load avg */
 void calculate_load_avg ()
 {
   ASSERT (thread_mlfqs);
-  //load_avg = (59/60)*load_avg + (1/60)*ready_threads
   int i, ready_threads = 0;
   for (i = 0; i < PRI_MAX + 1; i++)
   {
@@ -789,15 +791,16 @@ void calculate_load_avg ()
                       fix_frac (ready_threads, 60));
 }
 
+/* calculate recent_cpu */
 void calculate_recent_cpu (struct thread *t, void *aux UNUSED)
 {
   ASSERT (thread_mlfqs);
-  //recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice
   fixed_point_t coef = fix_scale (load_avg, 2);
   coef = fix_div (coef, fix_add (coef, fix_int (1)));
   t->recent_cpu = fix_add (fix_mul (coef, t->recent_cpu), fix_int (t->nice));
 }
 
+/* check whether current thread need yield */
 bool need_yield ()
 {
   ASSERT (thread_mlfqs);

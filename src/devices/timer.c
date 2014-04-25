@@ -90,6 +90,7 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+/* Compare function for thread's wake_up_time. */
 static
 bool
 time_compare_less (const struct list_elem *a,
@@ -111,15 +112,11 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  //while (timer_elapsed (start) < ticks)
-  //thread_yield ();
   struct thread* t = thread_current ();
 
   t->wake_up_time = start + ticks;
   enum intr_level old = intr_disable ();
   list_insert_ordered (&sleep_list, &t->sleepelem, time_compare_less, NULL);
-  //printf("list_size() = %u\n",list_size(&sleep_list));
-  //printf("1.tid = %d, wake_up_time = %lld, start = %lld, ticks = %lld.\n", t->tid, t->wake_up_time, start, ticks);
   thread_block ();
   intr_set_level (old);
 }
@@ -200,16 +197,11 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
-  //if (ticks % 1000 == 0) printf("ticks = %lld.\n", ticks);
   while (!list_empty (&sleep_list))
   {
     struct list_elem *front = list_front (&sleep_list);
     struct thread* t = list_entry (front, struct thread, sleepelem);
-
-
     if (t->wake_up_time > ticks) break;
-    //printf("2.tid = %d, wake_up_time = %lld, ticks = %lld.\n", t->tid, t->wake_up_time, ticks);
-
     thread_unblock (t);
     list_pop_front (&sleep_list);
   }

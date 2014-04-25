@@ -100,7 +100,7 @@ struct thread
   struct lock *lock_to_acquire;       /* The lock this thread is waiting on. */
 
   int nice;                           /* Nice value */
-  fixed_point_t recent_cpu;                     /* Recent cpu value */
+  fixed_point_t recent_cpu;           /* Recent cpu value */
 
   /* Shared between thread.c and synch.c. */
   struct list_elem elem;              /* List element. */

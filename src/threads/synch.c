@@ -78,6 +78,7 @@ sema_down (struct semaphore *sema)
   intr_set_level (old_level);
 }
 
+/* New verison of sema_down that considers priority donation. */
 void
 sema_down_with_donation (struct semaphore *sema, struct lock *lock)
 {
@@ -94,7 +95,6 @@ sema_down_with_donation (struct semaphore *sema, struct lock *lock)
   while (sema->value == 0)
   {
     list_push_back (&sema->waiters, &thread_current ()->elem);
-    //ASSERT(list_check(&sema->waiters));
     if (thread_current ()->eff_priority > lock_holder->eff_priority)
     {
       thread_set_eff_priority (lock_holder, thread_current ()->eff_priority);
@@ -104,9 +104,9 @@ sema_down_with_donation (struct semaphore *sema, struct lock *lock)
   sema->value--;
 
   thread_current ()->lock_to_acquire = NULL;
-  if (!list_contains_elem (&thread_current ()->acquired_locks_list, &lock->lockelem))
+  if (!list_contains_elem (&thread_current ()->acquired_locks_list, 
+                           &lock->lockelem))
     list_push_back (&thread_current ()->acquired_locks_list, &lock->lockelem);
-  //ASSERT(list_check(&thread_current()->acquired_locks_list));
 
   intr_set_level (old_level);
 }
@@ -181,6 +181,7 @@ sema_up (struct semaphore *sema)
     thread_yield ();
 }
 
+/* New verison of sema_up that considers priority donation. */
 void
 sema_up_with_donation (struct semaphore *sema, struct lock *lock)
 {
@@ -197,9 +198,7 @@ sema_up_with_donation (struct semaphore *sema, struct lock *lock)
                                 thread_priority_greater, NULL),
     struct thread, elem);
     list_remove (&next->elem);
-    //ASSERT(list_check(&sema->waiters));
     struct thread *cur = thread_current ();
-    //ASSERT(list_check(&cur->acquired_locks_list));
 
     /* Current thread's priority may decrease in this case*/
     if (cur->eff_priority == next->eff_priority)
@@ -364,6 +363,7 @@ struct semaphore_elem
   struct semaphore semaphore;         /* This semaphore. */
 };
 
+/* Compare fucntion for thread's priority or eff_priority in sema. */
 static bool
 sema_priority_greater (const struct list_elem *e1,
                        const struct list_elem *e2,
