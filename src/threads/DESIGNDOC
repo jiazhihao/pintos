@@ -9,8 +9,8 @@
 >> Fill in the names and email addresses of your group members.
 
 Tai Guo <taig@stanford.edu>
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
+Ruizhongtai Qi <rqi@stanford.edu>
+Zhihao Jia <zhihao@stanford.edu>
 
 ---- PRELIMINARIES ----
 
@@ -21,6 +21,8 @@ FirstName LastName <email@domain.example>
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
 
+None that we can think of.
+
 			     ALARM CLOCK
 			     ===========
 
@@ -30,28 +32,89 @@ FirstName LastName <email@domain.example>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+- add memebers to struct thread in 'thread.h'
+    /* List element for the sleeping list */
+    struct list_elem sleepelem;
+    
+    /* The time this thread will wake up */
+    int64_t wake_up_time;
 
+- add new struct in 'timer.c'
+    /* List of all threads that are blocked in timer_sleep*/
+    static struct list sleep_list;
 
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
 
+In function timer_sleep(), we first write down the current time ticks,
+and use a 64-bit variable 'start' to save current time tick number.
+By adding 'start' with the number of time ticks we have to wait, we can
+calucluate the wake up time, by which time this thread should return to
+ready list and be scheduled to run. During this time slot, we put current
+thread into a sleep list, which is implemented to keep track of all sleeping
+threads. Since this list is a global view of sleeping threads and can be
+modified by any thread, we disable interrupts during our operations on
+sleep list. After that, current thread invokes thread_block(), which changes
+the status of current thread to BLOCKED and schedule other threads to run.
+One thing to consider is that schedule() requires interrupts to be disabled,
+since it involves context switch, and this is the second reason why we disable
+interrupts in timer_sleep().
+
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
+
+We invovle sorted list to implement sleep list, which achieves O(1) time
+complexity to find the thread with earliest wake-up time. This can optimize
+timer interrupt handler, since it only takes O(1) time to find the next thread
+to wake up.
 
 ---- SYNCHRONIZATION ----
 
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
+In order to avoid race conditions, we disable interrupts during our operations
+on sleep list and blocking current thread. When multiple threads call
+timer_sleep() simultaneously, only one thread can manipulate sleep list and 
+block itself at any time. Operation on sleep list can be considered atomic.
+
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
+
+In order to avoid race conditions when a timer interrupt occurs during a call
+to timer_sleep(), we disable interrupts when either thread is manipulating the
+sleep list, which is shared between timer_sleep() and timer interrupt handler.
+As a result, when timer interrupt occurs in timer_sleep(), the execution of
+timer interrupt handler will be deferred until timer_sleep() finishes
+manipulation on sleep list and blocks itself. So race conditions are avoided.
 
 ---- RATIONALE ----
 
 >> A6: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+Our design has several advantages.
+
+First, we use sleep list to keep track of all threads that is currently
+sleeping. Instread of spinning in a loop and calling thread_yield() until
+enough time has gone by, timer_sleep() add current thread into sleep list
+and remove current thread from thread ready list by invoking thread_block()
+and therefore avoids 'busy wait'.
+
+Second, we use sorted list to implement sleep list, which achieves O(1) time
+complexity to find the thread with earliest wake-up time. This can optimize
+timer interrupt handler, since it only takes O(1) time to find the next thread
+to wake up.
+
+Third, list elements of sleep list is located in thread structure, which avoids
+dynamic allocation every time a thread is added into sleep list. In the thread
+structure, we added a list_elem (i.e., sleepelem) and a 64 bit integer 
+(i.e., wake_up_time). The list_elem is to keep tack of its previous and next
+element in sleep list, wile the 64 bit integer records its wake-up time. By
+only introducing 12 bytes overhead for each thread, we entirely avoid dynamic
+allocation during the manipulation on sleep list. 
 
 			 PRIORITY SCHEDULING
 			 ===================
@@ -83,10 +146,64 @@ FirstName LastName <email@domain.example>
 >> how your implementation avoids it.  Can you use a lock to avoid
 >> this race?
 
+thread_set_priority() not only updates its generic priority, but also
+recalculates its effective priority. A thread's effective priority is the 
+maximum value of its generic priority and effective priority of the threads 
+waiting on its acquired locks. 
+
+A potential race occurs in thread_set_priority() if interrupt comes in right
+after thread#1 has computed its effective priority before not yet assigned it
+to  thread->eff_priority. During the interruption period, if a new thread#2 
+with a higher priority comes in and waits on a lock acquired by thread#1. Then,
+we should promote thread#1's eff_priority to that of thread#2. When thread#1
+switchs back, we will assign its old effective priority to
+thread#1->eff_priority, without considering the affects of thread#2.
+
+A lock cannot solve this race, since lock cannot avoid interrupts, and
+consequently let thread#1 ignore the affects of thread#2. Moreover, computing
+this new lock may lead new priority donation which futher changes efftive
+priority. To avoid this race, we disable interrupt inside 
+thread_set_priority().
+
 ---- RATIONALE ----
 
 >> B7: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+To solve the nested donation problem, we implement a recursive function
+thread_set_eff_priority() to find all threads, whose effective priority need
+changes when a lock_acquire(), lock_release(), or thread_set_priority()
+happens.
+
+One alternative approach is to give each thread a donating list, which keeps
+track of all other threads that current thread needs to donate its effective 
+priority to. This approach involves several downsides, compared with our
+approach.
+
+First, it introduce a high time complexity (O(n^2), where n is the
+total number of threads in OS) for lock_acquire(), lock_release(), and 
+thread_set_priority(). The worst case is that current thread has to donate its
+priority to all other threads, in which case you have to check donating lists 
+of all other threads, and achieves O(n^2) time complexity since you may have to
+check O(n) lists and each list may have O(n) threads. In our design, we only
+keep track of the locks current thread has acquired. For lock_acquire(),
+lock_release(), and thread_set_priority(), we only introduce O(n) time 
+complexity since we go over other thread at most once.
+
+Second, it involves a high space overhead for each thread. In this design,
+donating list keeps track of all other threads that current thread has to
+donate its effective priority to. In worst case, it may consume O(n) memory,
+since it may has to donating to all other threads. In the contrary, our
+approach only keeps track of the locks current thread has acquired. And since
+each lock can be acquired by at most one thread. We only have to introduce a
+struct list (which is actually two pointers) to each thread. Therefore, we
+add O(1) overhead to each thread.
+
+Third, it involves dynamic allocation, since we have to allocate new memory
+every time we add a new thread into donating list. Our design eliminate the 
+cost of dynamic allocation by tracking the set of locks current thread has
+acquired. Since each lock shows up in almost one thread's acquired_lock_list,
+we don't have to allocate memory when a lock is added into acquired_lock_list.
 
 			  ADVANCED SCHEDULER
 			  ==================
