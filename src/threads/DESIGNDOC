@@ -249,14 +249,48 @@ ticks   A   B   C   A   B   C   to run
 24     16   8   0  59  59  59     A
 28     20   8   0  58  59  59     C
 32     20   8   4  58  59  58     B
-36     20  12   4  58  58  58     A
+36     20  12   4  58  58  58     B
 
 >> C3: Did any ambiguities in the scheduler specification make values
 >> in the table uncertain?  If so, what rule did you use to resolve
 >> them?  Does this match the behavior of your scheduler?
 
+Yes. One ambiguity is whent multiple threads have the highest priority (like 
+tick 8, 16, 24, 28 and 36), which thread should be scheduled. In my design, 
+the running thread only yields when there are some threads with higher 
+priority than it. At tick 8, 16, 24 and 36, the running thread did not 
+yield, because it is still one of the threads that have the highest priority.
+This design will reduce the need of context switch and is beneficial to the 
+performance. And when the running thread yield, if there are multiple 
+threads with the highest priority, my design make the choice based on FIFO. 
+We have 64 queues and for the scheduler, it just pop the front of the queue 
+with the highest priority. For example, C stays in the queue[59] since tick 0 
+and B joined the queue[59] later at tick 20, so at tick 28, my design 
+choose C to run next.
+
+My scheduler works exactly as the description and the table above. This part 
+is a little different from the part 2 regarding of choosing threads when 
+multiple threads have the highest priority. This is because we devide the 
+project and work roughly independently. Since this is ambiguious in the 
+specification and both our policies in part 2 and part 3 have their own 
+advantages, I believe it is fine to have both of them in our project.
+
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
+
+Fairly speaking, there is not much choice for us to design regarding this 
+question. 
+
+In this prat the only relevant interrupt is timer interrupt. Theoretically 
+the work in the timer interrupt should be kept as little as possible, since 
+this piece of code will be run every timer tick. If it cost lots of time, 
+the threads itself will not have enough time to do its work.
+
+However, some work have to be done in the timer interrupt, like calculating 
+load_avg, recent_cpu and priority, because these work must be done at some 
+particular time point. And besides that, once every 4 ticks the priorities 
+are recalculated, my design also do a small loop to check whether the 
+current thread need yield the cpu according to the description in C3.
 
 ---- RATIONALE ----
 
@@ -265,12 +299,52 @@ ticks   A   B   C   A   B   C   to run
 >> time to work on this part of the project, how might you choose to
 >> refine or improve your design?
 
+Structure:
+
+We use 64 queue in both part 2 and part 3. In this way it is very fast to 
+deal with the ready list. The push, pop and delete are all O(1). When all
+the priorities are recalculated, moving threads around is also O(n) where 
+n is the number of threads, since we just use its priority as the index. 
+Searching for the next thread to run costs O(p) where p is the number of 
+priority levels (p=64 here) since we need to check all the queues from the 
+top priority till the first unempty queue. 
+
+Compared with the single queue implementation, which might need to re-sort 
+the queue when recalculating all the priorities which is O(nlogn) but only 
+need O(1) to find the next thread to run, our design is better when number 
+of threads are large and single queue design is better when number of 
+priority levels are much larger than number of threads. I believe for most 
+of the OS, threads number is larger than the priority number, so our design 
+is a better choice.
+
+Schedule policy:
+
+It is still the case I discussed in C3. A running thread does not yield when 
+no thread has higher priority. It must yield as soon as there are other 
+threads with higher priority. Another choice is that the running thread 
+yield the cpu when it still holds the highest priority but some other 
+threads also have the same priority. This choice will result in a context 
+switch every 4 ticks. Compared with this choice, my design reduce the number 
+of context switches in a resonable way. 
+
+The disadvantage is that I need to check whether it is needed to yield by 
+looping from queue[63] to queue[thread_current->priority] to check whether 
+empty (see function need_yield()), which cost some time every 4 ticks. 
+
+Actually this problem can be fixed if I have more time. Since in the function
+schedule(), it also does the same work as the need_yield() function. We can 
+pass in a index from need_yield() to thread_yield() to schedule() to tell it 
+the first unempty queue with the highest priority. In this way, the check of 
+need of yield brings no extra calculation.
+
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
 >> decide to implement it the way you did?  If you created an
 >> abstraction layer for fixed-point math, that is, an abstract data
 >> type and/or a set of functions or macros to manipulate fixed-point
 >> numbers, why did you do so?  If not, why not?
+
+
 
 			   SURVEY QUESTIONS
 			   ================
