@@ -8,6 +8,7 @@
 #include "threads/pte.h" // PTE_U, PTE_P, PTE_W
 #include "userprog/pagedir.h" // pagedir_check_userpage()
 #include <string.h>
+#include "filesys/filesys.h"
 
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
@@ -17,6 +18,10 @@ static void _exit (int status);
 static int _wait (int pid);
 static int _write (int fd, const void *buffer, unsigned size);
 static pid_t _exec (char *cmd_line);
+static bool _create (const char *file, uint32_t initial_size);
+static bool _remove (const char *file);
+
+
 void
 syscall_init (void) 
 {
@@ -50,7 +55,12 @@ syscall_handler (struct intr_frame *f)
       f->eax = (uint32_t) _wait ((int)arg1);
       break;
     case SYS_CREATE:
+      arg1 = get_stack_entry (esp, 1);
+      arg2 = get_stack_entry (esp, 2);
+      f->eax = (uint32_t)_create ((char *)arg1, (uint32_t)arg2);
     case SYS_REMOVE:
+      arg1 = get_stack_entry (esp, 1);
+      f->eax = (uint32_t)_remove ((char *)arg1);
     case SYS_OPEN:
     case SYS_FILESIZE:
     case SYS_READ:
@@ -141,4 +151,24 @@ _exec (char *cmd_line)
   }
   pid_t pid = (pid_t)process_execute (cmd_line);
   return pid;
+}
+
+static bool
+_create (const char *file, uint32_t initial_size)
+{
+  if (!check_user_memory (file, strlen (file), false))
+  {
+    return -1;
+  }
+  return filesys_create (file, initial_size);
+}
+
+static bool
+_remove (const char *file)
+{
+  if (!check_user_memory (file, strlen (file), false))
+  {
+    return -1;
+  }
+  return filesys_remove (file);
 }
