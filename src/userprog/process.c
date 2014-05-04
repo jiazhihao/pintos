@@ -28,33 +28,49 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 tid_t
 process_execute (const char *cmd_line) 
 {
+  struct start_status start;
   char *fn_copy;
   tid_t tid;
-
+  if (cmd_line == NULL)
+  {
+    return TID_ERROR;
+  }
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
+  sema_init (&start.sema, 0);
   strlcpy (fn_copy, cmd_line, PGSIZE);
+  start.cmd_line = fn_copy;
   char file_name[FILE_NAME_LEN];
-  if (!get_file_name (fn_copy, file_name))
+  if (get_file_name (fn_copy, file_name))
   {
-    return TID_ERROR;
+    tid = thread_create (file_name, PRI_DEFAULT, start_process, &start);
+  }
+  else
+  {
+    tid = TID_ERROR;
   }
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+  {
+    palloc_free_page (fn_copy);
+  }
+  else
+  {
+    sema_down (&start.sema);
+  }
   return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *aux)
 {
-  char *cmd_line = file_name_;
+  struct start_status *start = aux;
+  char *cmd_line = start->cmd_line;
   struct intr_frame if_;
   bool success;
   char file_name[FILE_NAME_LEN];
@@ -65,10 +81,11 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = success && load (file_name, &if_.eip, &if_.esp)
-    && argument_passing (cmd_line, &if_.esp);
+    && argv_passer (cmd_line, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page (cmd_line);
+  sema_up (&start->sema);
   if (!success)
     thread_exit ();
 
@@ -490,15 +507,15 @@ get_file_name (char *cmd_line, char *file_name)
 }
 
 bool
-argument_passing (char *cmd_line, void **esp)
+argv_passer (char *argv, void **esp)
 {
-  if (cmd_line == NULL)
+  if (argv == NULL)
   {
     return 0;
   }
   char *token, *save_ptr;
   int argc = 0, len = 0;
-  if (!calculate_len (cmd_line, &argc, &len))
+  if (!calculate_len (argv, &argc, &len))
   {
     return 0;
   }
@@ -514,7 +531,7 @@ argument_passing (char *cmd_line, void **esp)
   *arg_start++ = (char *)argc;
   *arg_start = (char *)(arg_start + 1);
   arg_start++;
-  for (token = strtok_r (cmd_line, " ", &save_ptr); token != NULL;
+  for (token = strtok_r (argv, " ", &save_ptr); token != NULL;
        token = strtok_r (NULL, " ", &save_ptr))
   {
     len = strlen (token) + 1;
