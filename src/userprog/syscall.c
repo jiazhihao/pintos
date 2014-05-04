@@ -56,9 +56,11 @@ syscall_handler (struct intr_frame *f UNUSED)
       arg1 = get_stack_entry (esp, 1);
       arg2 = get_stack_entry (esp, 2);
       f->eax = (uint32_t)_create ((char *)arg1, (uint32_t)arg2);
+      break;
     case SYS_REMOVE:
       arg1 = get_stack_entry (esp, 1);
       f->eax = (uint32_t)_remove ((char *)arg1);
+      break;
     case SYS_OPEN:
     case SYS_FILESIZE:
     case SYS_READ:
@@ -139,13 +141,17 @@ _write (int fd, const void *buffer, unsigned size)
 static pid_t
 _exec (char *cmd_line)
 {
-  if (strlen (cmd_line) > PGSIZE)
+  if (cmd_line == NULL)
+  {
+    _exit (-1);
+  }
+  if (strnlen (cmd_line, FILE_NAME_LEN) >= FILE_NAME_LEN)
   {
     return -1;
   }
-  if (!check_user_memory (cmd_line, strlen (cmd_line), false))
+  if (!check_user_memory (cmd_line, strnlen (cmd_line, FILE_NAME_LEN), false))
   {
-    return -1;
+    _exit(-1);
   }
   pid_t pid = (pid_t)process_execute (cmd_line);
   return pid;
@@ -154,9 +160,17 @@ _exec (char *cmd_line)
 static bool
 _create (const char *file, uint32_t initial_size)
 {
-  if (!check_user_memory (file, strlen (file), false))
+  if (!check_user_memory (file, 0, false))
+  {
+    _exit (-1);
+  }
+  if (strnlen (file, FILE_NAME_LEN) >= FILE_NAME_LEN)
   {
     return 0;
+  }
+  if (!check_user_memory (file, strnlen (file, FILE_NAME_LEN), false))
+  {
+    _exit (-1);
   }
   lock_acquire (&filesys_lock);
   bool success = filesys_create (file, initial_size);
@@ -167,9 +181,17 @@ _create (const char *file, uint32_t initial_size)
 static bool
 _remove (const char *file)
 {
-  if (!check_user_memory (file, strlen (file), false))
+  if (!check_user_memory (file, 0, false))
+  {
+    _exit (-1);
+  }
+  if (strnlen (file, FILE_NAME_LEN) >= FILE_NAME_LEN)
   {
     return 0;
+  }
+  if (!check_user_memory (file, strnlen (file, FILE_NAME_LEN), false))
+  {
+    _exit (-1);
   }
   lock_acquire (&filesys_lock);
   bool success = filesys_remove (file);
