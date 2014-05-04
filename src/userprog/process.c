@@ -65,7 +65,7 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = success && load (file_name, &if_.eip, &if_.esp)
-    && argv_passer (cmd_line, &if_.esp);
+    && argument_passing (cmd_line, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page (cmd_line);
@@ -490,15 +490,15 @@ get_file_name (char *cmd_line, char *file_name)
 }
 
 bool
-argv_passer (char *argv, void **esp)
+argument_passing (char *cmd_line, void **esp)
 {
-  if (argv == NULL)
+  if (cmd_line == NULL)
   {
     return 0;
   }
   char *token, *save_ptr;
   int argc = 0, len = 0;
-  if (!calculate_len (argv, &argc, &len))
+  if (!calculate_len (cmd_line, &argc, &len))
   {
     return 0;
   }
@@ -514,7 +514,7 @@ argv_passer (char *argv, void **esp)
   *arg_start++ = (char *)argc;
   *arg_start = (char *)(arg_start + 1);
   arg_start++;
-  for (token = strtok_r (argv, " ", &save_ptr); token != NULL;
+  for (token = strtok_r (cmd_line, " ", &save_ptr); token != NULL;
        token = strtok_r (NULL, " ", &save_ptr))
   {
     len = strlen (token) + 1;

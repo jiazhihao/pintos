@@ -96,6 +96,7 @@ pagedir_check_userpage (uint32_t *pd, void *upage, bool to_write)
   /* writable address */
   if (to_write && !(*pte & PTE_W))
     return false;
+  return true;
 }
 
 /* Adds a mapping in page directory PD from user virtual page
