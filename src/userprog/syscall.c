@@ -97,6 +97,8 @@ static void
 _exit (int status)
 {
   // TODO
+  struct thread* cur = thread_current();
+  cur->exit_status.exit_value = status;
   thread_exit ();
 }
 
