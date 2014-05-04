@@ -146,16 +146,15 @@ process_exit (void)
   /* Notify parent thread regarding the exit of current process .
      Initial thread's exit_status is NULL since it has no parent
      and it needn't notify anyone of its exit. */
-  if (&cur->exit_status != NULL)
+  if (cur->exit_status != NULL)
     sema_up(&cur->exit_status->wait_on_exit);
 
   /* Free all children's exit_status. */
   lock_acquire(&cur->child_list_lock);
   struct list_elem *e;
-  for (e = list_begin(&cur->child_list);
-       e != list_end(&cur->child_list);
-       e = list_next(e))
+  while (!list_empty (&cur->child_list))
   {
+    e = list_pop_front (&cur->child_list);
     struct exit_status *exit_status = list_entry(e, struct exit_status, elem);
     free(exit_status);
   }
@@ -177,7 +176,8 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-  printf ("%s: exit(%d)\n", cur->name, cur->exit_status->exit_value);
+  if (cur->exit_status != NULL)
+    printf ("%s: exit(%d)\n", cur->name, cur->exit_status->exit_value);
 }
 
 /* Sets up the CPU for running user code in the current

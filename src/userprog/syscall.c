@@ -97,7 +97,7 @@ check_user_memory (const void *vaddr, size_t size, bool to_write)
 static uint32_t
 get_stack_entry (uint32_t *esp, size_t offset)
 {
-  if (!check_user_memory (esp, sizeof(uint32_t), false))
+  if (!check_user_memory (esp+offset, sizeof(uint32_t), false))
     _exit (-1);
   return *(esp + offset);
 }
@@ -112,7 +112,8 @@ static void
 _exit (int status)
 {
   struct thread* cur = thread_current();
-  cur->exit_status->exit_value = status;
+  if (cur->exit_status != NULL)
+    cur->exit_status->exit_value = status;
   thread_exit ();
 }
 
