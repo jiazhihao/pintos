@@ -22,6 +22,7 @@ static pid_t _exec (char *cmd_line);
 static bool _create (const char *file, uint32_t initial_size);
 static bool _remove (const char *file);
 
+extern struct lock filesys_lock;
 
 void
 syscall_init (void) 
@@ -155,9 +156,12 @@ _create (const char *file, uint32_t initial_size)
 {
   if (!check_user_memory (file, strlen (file), false))
   {
-    return -1;
+    return 0;
   }
-  return filesys_create (file, initial_size);
+  lock_acquire (&filesys_lock);
+  bool success = filesys_create (file, initial_size);
+  lock_release (&filesys_lock);
+  return success;
 }
 
 static bool
@@ -165,7 +169,10 @@ _remove (const char *file)
 {
   if (!check_user_memory (file, strlen (file), false))
   {
-    return -1;
+    return 0;
   }
-  return filesys_remove (file);
+  lock_acquire (&filesys_lock);
+  bool success = filesys_remove (file);
+  lock_release (&filesys_lock);
+  return success;
 }
