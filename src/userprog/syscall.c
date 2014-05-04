@@ -24,15 +24,12 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  printf("in syscall_handler.\n");
   uint32_t *esp = (uint32_t *) f->esp;
   if (!is_user_vaddr (f->esp))
   	_exit (-1);
 
   uint32_t syscall_number = get_stack_entry (esp, 0);
   uint32_t arg1, arg2, arg3;
-
-  printf ("syscall number: %d\n", syscall_number);
 
   switch (syscall_number)
   {
@@ -55,7 +52,6 @@ syscall_handler (struct intr_frame *f UNUSED)
       arg2 = get_stack_entry (esp, 2);
       arg3 = get_stack_entry (esp, 3);
       f->eax = (uint32_t) _write ((int)arg1, (const void *)arg2, (unsigned)arg3);
-      printf("after _write..\n");
       break;
     case SYS_SEEK:
     case SYS_TELL:
@@ -110,6 +106,10 @@ _write (int fd, const void *buffer, unsigned size)
   // TODO
   if (!check_user_memory (buffer, size, false))
   	_exit(-1);
-  printf("in write ... fd: %d, size: %d\n", fd, size);
+  if (fd == STDOUT_FILENO)
+  {
+  	putbuf (buffer, size);
+  	return size;
+  }
   return 0;
 }
