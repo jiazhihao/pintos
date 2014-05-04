@@ -27,8 +27,6 @@ static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
   uint32_t *esp = (uint32_t *) f->esp;
-  if (!is_user_vaddr (f->esp))
-  	_exit (-1);
 
   uint32_t syscall_number = get_stack_entry (esp, 0);
   uint32_t arg1, arg2, arg3;
@@ -87,8 +85,10 @@ check_user_memory (const void *vaddr, size_t size, bool to_write)
 static uint32_t
 get_stack_entry (uint32_t *esp, size_t offset)
 {
-  if (!is_user_vaddr (esp+offset))
-  	_exit (-1);
+  //if (!is_user_vaddr (esp+offset))
+  //	_exit (-1);
+  if (!check_user_memory (esp, offset, false))
+    _exit (-1);
   return *(esp + offset);
 }
 
