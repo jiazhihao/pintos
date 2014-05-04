@@ -11,7 +11,7 @@ void process_exit (void);
 void process_activate (void);
 
 bool get_file_name (char *cmd_line, char *file_name);
-bool argv_passer (char *argv, void **esp);
+bool argument_passing (char *argv, void **esp);
 bool calculate_len (char *argv, int *argc, int *len);
 
 struct start_status

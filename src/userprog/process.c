@@ -17,6 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -113,7 +114,7 @@ process_wait (tid_t child_tid)
 {
   int exit_value = -1;
   struct thread* cur = thread_current();
-  lock_acuqire(&cur->child_list_lock);
+  lock_acquire(&cur->child_list_lock);
   struct list_elem *e;
   for (e = list_begin(&cur->child_list);
        e != list_end(&cur->child_list);
@@ -130,6 +131,7 @@ process_wait (tid_t child_tid)
   }
 
   lock_release(&cur->child_list_lock);
+  return exit_value;
 }
 
 /* Free the current process's resources. */
@@ -140,7 +142,7 @@ process_exit (void)
   uint32_t *pd;
 
   /*Notify parent thread regarding the exit of current process*/
-  sema_up(&cur->exit_status.wait_on_exit);
+  sema_up(&cur->exit_status->wait_on_exit);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
