@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -96,12 +97,22 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-    int exit_code;
 #endif
 
+    struct exit_status *exit_status;    /* Pointer to owning thread's exit status. */
+    struct list child_list;             /* List for all child thread. */
+    struct lock child_list_lock;        /* Lock for child list*/
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
+
+struct exit_status
+{
+  int pid;                              /* Thread Process id. */
+  int exit_value;                       /* Return value of the owning thread. */
+  struct semaphore wait_on_exit;        /* Synchronization between parent's wait and child's exit. */
+  struct list_elem elem;                /* List elem for thread's child_list*/
+};
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

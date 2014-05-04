@@ -17,6 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -81,7 +82,7 @@ start_process (void *aux)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = success && load (file_name, &if_.eip, &if_.esp)
-    && argv_passer (cmd_line, &if_.esp);
+    && argument_passing (cmd_line, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page (cmd_line);
@@ -109,10 +110,28 @@ start_process (void *aux)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid)
 {
-  for (;;);
-  return -1;
+  int exit_value = -1;
+  struct thread* cur = thread_current();
+  lock_acquire(&cur->child_list_lock);
+  struct list_elem *e;
+  for (e = list_begin(&cur->child_list);
+       e != list_end(&cur->child_list);
+       e = list_next(e))
+  {
+    struct exit_status *exit_status = list_entry(e, struct exit_status, elem);
+    if (exit_status->pid == child_tid) {
+      sema_down(&exit_status->wait_on_exit);
+      exit_value = exit_status->exit_value;
+      list_remove(&exit_status->elem);
+      free(exit_status);
+      break;
+    }
+  }
+
+  lock_release(&cur->child_list_lock);
+  return exit_value;
 }
 
 /* Free the current process's resources. */
@@ -121,6 +140,21 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  /*Notify parent thread regarding the exit of current process*/
+  sema_up(&cur->exit_status->wait_on_exit);
+
+  /* Free all children's exit_status. */
+  lock_acquire(&cur->child_list_lock);
+  struct list_elem *e;
+  for (e = list_begin(&cur->child_list);
+       e != list_end(&cur->child_list);
+       e = list_next(e))
+  {
+    struct exit_status *exit_status = list_entry(e, struct exit_status, elem);
+    free(exit_status);
+  }
+  lock_release(&cur->child_list_lock);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -138,7 +172,7 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-  printf ("%s: exit(%d)\n", cur->name, cur->exit_code);
+  printf ("%s: exit(%d)\n", cur->name, cur->exit_status->exit_value);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -507,15 +541,15 @@ get_file_name (char *cmd_line, char *file_name)
 }
 
 bool
-argv_passer (char *argv, void **esp)
+argument_passing (char *cmd_line, void **esp)
 {
-  if (argv == NULL)
+  if (cmd_line == NULL)
   {
     return 0;
   }
   char *token, *save_ptr;
   int argc = 0, len = 0;
-  if (!calculate_len (argv, &argc, &len))
+  if (!calculate_len (cmd_line, &argc, &len))
   {
     return 0;
   }
@@ -531,7 +565,7 @@ argv_passer (char *argv, void **esp)
   *arg_start++ = (char *)argc;
   *arg_start = (char *)(arg_start + 1);
   arg_start++;
-  for (token = strtok_r (argv, " ", &save_ptr); token != NULL;
+  for (token = strtok_r (cmd_line, " ", &save_ptr); token != NULL;
        token = strtok_r (NULL, " ", &save_ptr))
   {
     len = strlen (token) + 1;

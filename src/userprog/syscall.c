@@ -9,12 +9,12 @@
 #include "userprog/pagedir.h" // pagedir_check_userpage()
 #include <string.h>
 
-
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
 static uint32_t get_stack_entry (uint32_t *esp, size_t offset);
 static void _halt (void);
 static void _exit (int status);
+static int _wait (int pid);
 static int _write (int fd, const void *buffer, unsigned size);
 static pid_t _exec (char *cmd_line);
 void
@@ -46,6 +46,9 @@ syscall_handler (struct intr_frame *f)
       arg1 = get_stack_entry (esp, 1);
       f->eax = (uint32_t)_exec ((char *)arg1);
     case SYS_WAIT:
+      arg1 = get_stack_entry (esp, 1);
+      f->eax = (uint32_t) _wait ((int)arg1);
+      break;
     case SYS_CREATE:
     case SYS_REMOVE:
     case SYS_OPEN:
@@ -100,9 +103,15 @@ _halt (void)
 static void
 _exit (int status)
 {
-  // TODO
-  thread_current ()->exit_code = status;
+  struct thread* cur = thread_current();
+  cur->exit_status->exit_value = status;
   thread_exit ();
+}
+
+static int
+_wait (int pid)
+{
+  return process_wait(pid);
 }
 
 static int

@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -164,8 +165,9 @@ thread_print_stats (void)
    Priority scheduling is the goal of Problem 1-3. */
 tid_t
 thread_create (const char *name, int priority,
-               thread_func *function, void *aux) 
+               thread_func *function, void *aux)
 {
+  struct thread *parent = thread_current ();
   struct thread *t;
   struct kernel_thread_frame *kf;
   struct switch_entry_frame *ef;
@@ -179,9 +181,13 @@ thread_create (const char *name, int priority,
   if (t == NULL)
     return TID_ERROR;
 
-  /* Initialize thread. */
+  /* Initialize thread, and set up exit_status */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  t->exit_status = (struct exit_status*) malloc(sizeof(struct exit_status));
+  t->exit_status->exit_value = -1;
+  sema_init(&t->exit_status->wait_on_exit, 0);
+  t->exit_status->pid = tid;
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -197,6 +203,15 @@ thread_create (const char *name, int priority,
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
   sf->ebp = 0;
+
+  /* Update parent's child_list*/
+  if (parent != NULL)
+  {
+    lock_acquire(&parent->child_list_lock);
+    list_push_back(&parent->child_list, &t->exit_status->elem);
+    //TODO(zhihao): add reference counter, add isExit flag
+    lock_release(&parent->child_list_lock);
+  }
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -463,8 +478,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
-  t->exit_code = 0;
-
+  list_init(&t->child_list);
+  lock_init(&t->child_list_lock);
+ 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
