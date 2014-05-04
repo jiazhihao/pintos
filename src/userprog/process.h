@@ -10,7 +10,7 @@ void process_exit (void);
 void process_activate (void);
 
 bool get_file_name (char *cmd_line, char *file_name);
-bool argv_passer (char *argv, void **esp);
+bool argument_passing (char *cmd_line, void **esp);
 bool calculate_len (char *argv, int *argc, int *len);
 
 #endif /* userprog/process.h */
