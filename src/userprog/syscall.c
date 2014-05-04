@@ -1,12 +1,14 @@
 #include "userprog/syscall.h"
+#include "userprog/process.h"
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
-#include "threads/thread.h"
 #include "threads/vaddr.h" // is_user_vaddr(), pg_round_down(), PGSIZE
 #include "devices/shutdown.h" // shutdown_power_off()
 #include "threads/pte.h" // PTE_U, PTE_P, PTE_W
 #include "userprog/pagedir.h" // pagedir_check_userpage()
+#include <string.h>
+
 
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
@@ -14,7 +16,7 @@ static uint32_t get_stack_entry (uint32_t *esp, size_t offset);
 static void _halt (void);
 static void _exit (int status);
 static int _write (int fd, const void *buffer, unsigned size);
-
+static pid_t _exec (char *cmd_line);
 void
 syscall_init (void) 
 {
@@ -22,7 +24,7 @@ syscall_init (void)
 }
 
 static void
-syscall_handler (struct intr_frame *f UNUSED) 
+syscall_handler (struct intr_frame *f) 
 {
   uint32_t *esp = (uint32_t *) f->esp;
   if (!is_user_vaddr (f->esp))
@@ -41,6 +43,8 @@ syscall_handler (struct intr_frame *f UNUSED)
       _exit ((int)arg1);
       break;
     case SYS_EXEC:
+      arg1 = get_stack_entry (esp, 1);
+      f->eax = (uint32_t)_exec ((char *)arg1);
     case SYS_WAIT:
     case SYS_CREATE:
     case SYS_REMOVE:
@@ -113,4 +117,19 @@ _write (int fd, const void *buffer, unsigned size)
   	return size;
   }
   return 0;
+}
+
+static pid_t
+_exec (char *cmd_line)
+{
+  if (strlen (cmd_line) > PGSIZE)
+  {
+    return -1;
+  }
+  if (!check_user_memory (cmd_line, strlen (cmd_line), false))
+  {
+    return -1;
+  }
+  pid_t pid = (pid_t)process_execute (cmd_line);
+  return pid;
 }
