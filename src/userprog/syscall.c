@@ -7,12 +7,14 @@
 #include "devices/shutdown.h" // shutdown_power_off()
 #include "threads/pte.h" // PTE_U, PTE_P, PTE_W
 #include "userprog/pagedir.h" // pagedir_check_userpage()
+#include "userprog/process.h" // process_wait()
 
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
 static uint32_t get_stack_entry (uint32_t *esp, size_t offset);
 static void _halt (void);
 static void _exit (int status);
+static int _wait (int pid);
 static int _write (int fd, const void *buffer, unsigned size);
 
 void
@@ -42,6 +44,9 @@ syscall_handler (struct intr_frame *f UNUSED)
       break;
     case SYS_EXEC:
     case SYS_WAIT:
+      arg1 = get_stack_entry (esp, 1);
+      f->eax = (uint32_t) _wait ((int)arg1);
+      break;
     case SYS_CREATE:
     case SYS_REMOVE:
     case SYS_OPEN:
@@ -99,6 +104,12 @@ _exit (int status)
   struct thread* cur = thread_current();
   cur->exit_status->exit_value = status;
   thread_exit ();
+}
+
+static int
+_wait (int pid)
+{
+  return process_wait(pid);
 }
 
 static int

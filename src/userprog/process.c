@@ -144,6 +144,18 @@ process_exit (void)
   /*Notify parent thread regarding the exit of current process*/
   sema_up(&cur->exit_status->wait_on_exit);
 
+  /* Free all children's exit_status. */
+  lock_acquire(&cur->child_list_lock);
+  struct list_elem *e;
+  for (e = list_begin(&cur->child_list);
+       e != list_end(&cur->child_list);
+       e = list_next(e))
+  {
+    struct exit_status *exit_status = list_entry(e, struct exit_status, elem);
+    free(exit_status);
+  }
+  lock_release(&cur->child_list_lock);
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
