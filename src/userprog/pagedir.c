@@ -85,6 +85,19 @@ lookup_page (uint32_t *pd, const void *vaddr, bool create)
   return &pt[pt_no (vaddr)];
 }
 
+/* Check whether a user page is valid. return true if it is and false ow. */
+bool
+pagedir_check_userpage (uint32_t *pd, void *upage, bool to_write)
+{
+  uint32_t *pte = lookup_page (pd, upage, false);
+  /* present + user mode */
+  if (pte == NULL || !(*pte & PTE_P) || !(*pte & PTE_U))
+    return false;
+  /* writable address */
+  if (to_write && !(*pte & PTE_W))
+    return false;
+}
+
 /* Adds a mapping in page directory PD from user virtual page
    UPAGE to the physical frame identified by kernel virtual
    address KPAGE.
