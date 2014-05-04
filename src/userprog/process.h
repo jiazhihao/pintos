@@ -2,7 +2,7 @@
 #define USERPROG_PROCESS_H
 
 #include "threads/thread.h"
-#define FILE_NAME_LEN 15
+#define FILE_NAME_LEN 16
 #define LONG_SIZE 4
 tid_t process_execute (const char *file_name);
 int process_wait (tid_t);

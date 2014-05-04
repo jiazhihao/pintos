@@ -97,6 +97,7 @@ static void
 _exit (int status)
 {
   // TODO
+  thread_current ()->exit_code = status;
   thread_exit ();
 }
 
