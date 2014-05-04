@@ -181,9 +181,12 @@ thread_create (const char *name, int priority,
   if (t == NULL)
     return TID_ERROR;
 
-  /* Initialize thread. */
+  /* Initialize thread, and set up exit_status */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  t->exit_status = (struct exit_status*) malloc(sizeof(struct exit_status));
+  t->exit_status->exit_value = -1;
+  sema_init(&t->exit_status->wait_on_exit, 0);
   t->exit_status->pid = tid;
 
   /* Stack frame for kernel_thread(). */
@@ -477,10 +480,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->magic = THREAD_MAGIC;
   list_init(&t->child_list);
   lock_init(&t->child_list_lock);
-  t->exit_status = (struct exit_status*) malloc(sizeof(struct exit_status));
-  t->exit_status->exit_value = -1;
-  sema_init(&t->exit_status->wait_on_exit, 0);
-
+ 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
