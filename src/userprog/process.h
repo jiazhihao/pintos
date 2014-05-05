@@ -16,6 +16,7 @@ bool calculate_len (char *argv, int *argc, int *len);
 
 struct start_status
 {
+  bool success;
   struct semaphore sema;
   char *cmd_line;
 };
