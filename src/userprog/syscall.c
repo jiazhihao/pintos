@@ -11,6 +11,7 @@
 #include <string.h>
 #include "filesys/filesys.h"
 #include "threads/malloc.h"
+#include "threads/palloc.h"
 
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);

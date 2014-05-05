@@ -481,7 +481,7 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->child_list);
   lock_init(&t->child_list_lock);
   t->exit_status = NULL;
-  t->ft_page_num = 0;
+  t->ft_page_size = 0;
  
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
