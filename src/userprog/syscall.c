@@ -274,7 +274,7 @@ _open (const char *file)
   int fd;
   lock_acquire (&filesys_lock);
   struct file *fp = filesys_open (file);
-  if (fp==NUll)
+  if (fp==NULL)
     fd = -1;
   else
     fd = thread_add_file (thread_current(), fp);
