@@ -25,8 +25,8 @@ static pid_t _exec (const char *cmd_line);
 static bool _create (const char *file, unsigned initial_size);
 static bool _remove (const char *file);
 static int _open (const char *file);
-
 static int _filesize (int fd);
+static void _seek (int fd, uint32_t position);
 
 extern struct lock filesys_lock;
 
@@ -86,6 +86,10 @@ syscall_handler (struct intr_frame *f UNUSED)
       f->eax = (uint32_t) _write ((int)arg1, (const void *)arg2, (unsigned)arg3);
       break;
     case SYS_SEEK:
+      arg1 = get_stack_entry (esp, 1);
+      arg2 = get_stack_entry (esp, 2);
+      _seek ((int)arg1, (uint32_t)arg2);
+      break;
     case SYS_TELL:
     case SYS_CLOSE:
       break;
@@ -228,4 +232,10 @@ _filesize (int fd)
     lock_release (&filesys_lock);
     return size;
   }
+}
+static void
+_seek (int fd, uint32_t position)
+{
+  struct file *file = thread_get_file (thread_current (), fd);
+  file_seek (file, position);
 }
