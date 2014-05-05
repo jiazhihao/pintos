@@ -12,6 +12,7 @@
 #include "filesys/filesys.h"
 #include "threads/malloc.h"
 #include "threads/palloc.h"
+#include "filesys/file.h"
 
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
@@ -207,7 +208,7 @@ _open (const char *file)
     _exit (-1);
   lock_acquire (&filesys_lock);
   struct file *fp = filesys_open (file);
-  int fd = thread_add_file (fp);
+  int fd = thread_add_file (thread_current(), fp);
   lock_release (&filesys_lock);
   return fd;
 }

@@ -160,6 +160,6 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 struct file * thread_get_file (struct thread *t, int fd);
-int thread_add_file(struct file *);
+int thread_add_file(struct thread *, struct file *);
 
 #endif /* threads/thread.h */
