@@ -159,7 +159,7 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-/* Thread operates on files*/
-int thread_add_file(struct file *);
+struct file * thread_get_file (struct thread *t, int fd);
+int thread_add_file(struct thread *, struct file *);
 
 #endif /* threads/thread.h */
