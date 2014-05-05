@@ -97,7 +97,8 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-    struct list file_list;              /* file list */
+    struct file **file_table;            /* file table. */
+    uint32_t ft_page_size;              /* page number of the file table. */
 #endif
 
     struct exit_status *exit_status;    /* Pointer to owning thread's exit status. */

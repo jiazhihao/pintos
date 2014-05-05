@@ -11,6 +11,7 @@
 #include <string.h>
 #include "filesys/filesys.h"
 #include "threads/malloc.h"
+#include "threads/palloc.h"
 
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
@@ -35,32 +36,36 @@ fd_table_add (struct file *file)
   {
     return -1;
   }
+  int fd = 0;
+
   struct thread *t = thread_current ();
-  struct list *list = &t->file_list;
-  struct file_node *node = (struct file_node *) malloc (sizeof(struct file_node));
-  if (node == NULL)
-  {
-    return -1;
+  if (t->ft_page_size == 0) {
+    t->file_table = (struct file **)palloc_get_multiple(PAL_ZERO, 1);
+    t->ft_page_size = PGSIZE / sizeof(void *);
+    fd = STDOUT_FILENO + 1;
   }
-  node->file = file;
-  struct list_elem *e;
-  int fd = 2;
-  for (e = list_begin (list); e != list_end (list); e = list_next (e))
-  {
-    struct file_node *t = list_entry (e, struct file_node, elem);
-    if (t->fd > fd)
+  else {
+    for (fd = STDOUT_FILENO + 1; fd < t->ft_page_size; fd++)
     {
-      list_insert (e, &node->elem);
-      node->fd = fd;
-      return fd;
+      if (t->file_table[fd] ==0)
+        break;
     }
-    else
-    {
-      fd++;
+
+    /* Didn't find empty slot in original file table, need to double
+     * file table size. */
+    if (fd == t->ft_page_size) {
+      int ft_page_num = t->ft_page_size * sizeof(void *) / PGSIZE * 2;
+      struct file ** new_file_table =
+        (struct file **)palloc_get_multiple(PAL_ZERO, ft_page_num);
+      memcpy(new_file_table, t->file_table, t->ft_page_size * sizeof(void *));
+      palloc_free_multiple(t->file_table, t->ft_page_size * sizeof(void *) / PGSIZE);
+      t->file_table = new_file_table;
+      t->ft_page_size = t->ft_page_size * 2;
     }
+    fd = fd + 1;
   }
-  list_push_back (list, &node->elem);
-  node->fd = fd;
+
+  t->file_table[fd] = file;
   return fd;
 }
 
