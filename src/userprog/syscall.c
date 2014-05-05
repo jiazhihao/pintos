@@ -11,6 +11,7 @@
 #include <string.h>
 #include "filesys/filesys.h"
 #include "threads/malloc.h"
+#include "threads/palloc.h"
 
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
@@ -24,44 +25,9 @@ static bool _create (const char *file, unsigned initial_size);
 static bool _remove (const char *file);
 static int _open (const char *file);
 
+static int _filesize (int fd);
+
 extern struct lock filesys_lock;
-
-static int
-fd_table_add (struct file *file)
-{
-  if (file == NULL)
-  {
-    return -1;
-  }
-  struct thread *t = thread_current ();
-  struct list *list = &t->file_list;
-  struct file_node *node = (struct file_node *) malloc (sizeof(struct file_node));
-  if (node == NULL)
-  {
-    return -1;
-  }
-  node->file = file;
-  struct list_elem *e;
-  int fd = 2;
-  for (e = list_begin (list); e != list_end (list); e = list_next (e))
-  {
-    struct file_node *t = list_entry (e, struct file_node, elem);
-    if (t->fd > fd)
-    {
-      list_insert (e, &node->elem);
-      node->fd = fd;
-      return fd;
-    }
-    else
-    {
-      fd++;
-    }
-  }
-  list_push_back (list, &node->elem);
-  node->fd = fd;
-  return fd;
-}
-
 
 void
 syscall_init (void) 
@@ -108,6 +74,9 @@ syscall_handler (struct intr_frame *f UNUSED)
       f->eax = (uint32_t)_open ((char *)arg1);
       break;
     case SYS_FILESIZE:
+      arg1 = get_stack_entry (esp, 1);
+      f->eax = (uint32_t)_filesize ((int)arg1);
+      break;
     case SYS_READ:
     case SYS_WRITE:
       arg1 = get_stack_entry (esp, 1);
@@ -241,4 +210,21 @@ _open (const char *file)
   int fd = fd_table_add (fp);
   lock_release (&filesys_lock);
   return fd;
+}
+
+static int
+_filesize (int fd)
+{
+  struct file *file = thread_get_file (thread_current(), fd);
+  if (file == NULL)
+  {
+    return -1;
+  }
+  else
+  {
+    lock_acquire (&filesys_lock);
+    int size = file_length (file);
+    lock_release (&filesys_lock);
+    return size;
+  }
 }

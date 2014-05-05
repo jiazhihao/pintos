@@ -390,12 +390,53 @@ thread_get_recent_cpu (void)
   /* Not yet implemented. */
   return 0;
 }
+
+int
+thread_add_file (struct file *file)
+{
+  if (file == NULL)
+  {
+    return -1;
+  }
+  int fd = 0;
+
+  struct thread *t = thread_current ();
+  if (t->file_table_size == 0) {
+    t->file_table = (struct file **)palloc_get_multiple(PAL_ZERO, 1);
+    t->file_table_size = PGSIZE / sizeof(void *);
+    fd = STDOUT_FILENO + 1;
+  }
+  else {
+    for (fd = STDOUT_FILENO + 1; fd < t->file_table_size; fd++)
+    {
+      if (t->file_table[fd] ==0)
+        break;
+    }
+
+    /* Didn't find empty slot in original file table, need to double
+     * file table size. */
+    if (fd == t->file_table_size) {
+      int ft_page_num = t->file_table_size * sizeof(void *) / PGSIZE * 2;
+      struct file ** new_file_table =
+        (struct file **)palloc_get_multiple(PAL_ZERO, ft_page_num);
+      memcpy(new_file_table, t->file_table, t->file_table_size * sizeof(void *));
+      palloc_free_multiple(t->file_table, t->file_table_size * sizeof(void *) / PGSIZE);
+      t->file_table = new_file_table;
+      t->file_table_size = t->file_table_size * 2;
+    }
+    fd = fd + 1;
+  }
+
+  t->file_table[fd] = file;
+  return fd;
+}
+
 
 
 struct file *
 thread_get_file (struct thread *t, int fd)
 {
-  if (fd < t->file_table_size())
+  if (fd < t->file_table_size)
     return t->file_table[fd];
   else
     return NULL;
@@ -492,6 +533,7 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->child_list);
   lock_init(&t->child_list_lock);
   t->exit_status = NULL;
+  t->file_table_size = 0;
  
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
