@@ -178,6 +178,14 @@ process_exit (void)
     file_close (cur->exec_file);
   }
 
+  /*Close all files opened by current process*/
+  int fd;
+  for (fd = 0; fd < cur->file_table_size; fd++)
+    if (cur->file_table[fd] != NULL)
+  {
+    //TODO(zhihao): close files.
+  }
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -202,8 +210,6 @@ process_exit (void)
      and it needn't notify anyone of its exit. */
   if (cur->exit_status != NULL)
     sema_up(&cur->exit_status->wait_on_exit);
-
-
 }
 
 /* Sets up the CPU for running user code in the current

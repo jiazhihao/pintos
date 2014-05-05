@@ -30,7 +30,7 @@ static bool _remove (const char *file);
 static int _open (const char *file);
 static int _filesize (int fd);
 static void _seek (int fd, uint32_t position);
-
+static uint32_t _tell (int fd);
 extern struct lock filesys_lock;
 
 void
@@ -99,6 +99,9 @@ syscall_handler (struct intr_frame *f UNUSED)
       _seek ((int)arg1, (uint32_t)arg2);
       break;
     case SYS_TELL:
+      arg1 = get_stack_entry (esp, 1);
+      f->eax = (uint32_t)_tell ((int)arg1);
+      break;
     case SYS_CLOSE:
       break;
   }	
@@ -268,10 +271,16 @@ _open (const char *file)
 {
   if (!check_user_string (file))
     _exit (-1);
+  int fd;
   lock_acquire (&filesys_lock);
   struct file *fp = filesys_open (file);
-  int fd = thread_add_file (thread_current(), fp);
+  if (fp==NUll)
+    fd = -1;
+  else
+    fd = thread_add_file (thread_current(), fp);
   lock_release (&filesys_lock);
+  if (fd==-1)
+    _exit(-1);
   return fd;
 }
 
@@ -296,4 +305,14 @@ _seek (int fd, uint32_t position)
 {
   struct file *file = thread_get_file (thread_current (), fd);
   file_seek (file, position);
+}
+
+static uint32_t
+_tell (int fd)
+{
+  struct file *file = thread_get_file (thread_current (), fd);
+  lock_acquire (&filesys_lock);
+  uint32_t result = file_tell (file);
+  lock_release (&filesys_lock);
+  return result;
 }
