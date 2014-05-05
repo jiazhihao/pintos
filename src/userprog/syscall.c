@@ -13,6 +13,8 @@
 #include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "filesys/file.h"
+#include "devices/input.h" // input_getc
+
 
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
@@ -20,6 +22,7 @@ static uint32_t get_stack_entry (uint32_t *esp, size_t offset);
 static void _halt (void);
 static void _exit (int status);
 static int _wait (int pid);
+static int _read (int fd, void *buffer, unsigned size);
 static int _write (int fd, const void *buffer, unsigned size);
 static pid_t _exec (const char *cmd_line);
 static bool _create (const char *file, unsigned initial_size);
@@ -27,7 +30,7 @@ static bool _remove (const char *file);
 static int _open (const char *file);
 static int _filesize (int fd);
 static void _seek (int fd, uint32_t position);
-
+static uint32_t _tell (int fd);
 extern struct lock filesys_lock;
 
 void
@@ -79,6 +82,11 @@ syscall_handler (struct intr_frame *f UNUSED)
       f->eax = (uint32_t)_filesize ((int)arg1);
       break;
     case SYS_READ:
+      arg1 = get_stack_entry (esp, 1);
+      arg2 = get_stack_entry (esp, 2);
+      arg3 = get_stack_entry (esp, 3);
+      f->eax = (uint32_t) _read ((int)arg1, (void *)arg2, (unsigned)arg3);
+      break;
     case SYS_WRITE:
       arg1 = get_stack_entry (esp, 1);
       arg2 = get_stack_entry (esp, 2);
@@ -91,6 +99,9 @@ syscall_handler (struct intr_frame *f UNUSED)
       _seek ((int)arg1, (uint32_t)arg2);
       break;
     case SYS_TELL:
+      arg1 = get_stack_entry (esp, 1);
+      f->eax = (uint32_t)_tell ((int)arg1);
+      break;
     case SYS_CLOSE:
       break;
   }	
@@ -160,17 +171,67 @@ _wait (int pid)
   return process_wait(pid);
 }
 
+static int 
+_read (int fd, void *buffer, unsigned size)
+{
+  if (!check_user_memory (buffer, size, true))
+    _exit (-1);
+  
+  if (fd == STDOUT_FILENO)
+    return -1;
+
+  if (fd == STDIN_FILENO)
+  {
+    unsigned i;
+    uint8_t *char_buf = (uint8_t *)buffer;
+    for (i = 0; i<size; i++)
+      char_buf[i] = input_getc();
+    return size;
+  }
+
+  struct file *f = thread_get_file (thread_current(), fd);
+  if (f == NULL)
+  {
+    return -1;
+  }
+  else
+  {
+    lock_acquire (&filesys_lock);
+    int result = file_read (f, buffer, size);
+    lock_release (&filesys_lock);
+    return result;
+  }
+}
+
+
 static int
 _write (int fd, const void *buffer, unsigned size)
 {
-  // TODO
   if (!check_user_memory (buffer, size, false))
   	_exit(-1);
+  
+  if (fd == STDIN_FILENO)
+    return -1;
+
   if (fd == STDOUT_FILENO)
   {
-  	putbuf (buffer, size);
-  	return size;
+    putbuf (buffer, size);
+    return size;
   }
+
+  struct file *f = thread_get_file (thread_current(), fd);
+  if (f == NULL)
+  {
+    return -1;
+  }
+  else
+  {
+    lock_acquire (&filesys_lock);
+    int result = file_write (f, buffer, size); 
+    lock_release (&filesys_lock);
+    return result;
+  }
+
   return 0;
 }
 
@@ -244,4 +305,14 @@ _seek (int fd, uint32_t position)
 {
   struct file *file = thread_get_file (thread_current (), fd);
   file_seek (file, position);
+}
+
+static uint32_t
+_tell (int fd)
+{
+  struct file *file = thread_get_file (thread_current (), fd);
+  lock_acquire (&filesys_lock);
+  uint32_t result = file_tell (file);
+  lock_release (&filesys_lock);
+  return result;
 }
