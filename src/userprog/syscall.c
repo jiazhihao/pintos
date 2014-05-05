@@ -27,47 +27,6 @@ static int _open (const char *file);
 
 extern struct lock filesys_lock;
 
-static int
-fd_table_add (struct file *file)
-{
-  if (file == NULL)
-  {
-    return -1;
-  }
-  int fd = 0;
-
-  struct thread *t = thread_current ();
-  if (t->ft_page_size == 0) {
-    t->file_table = (struct file **)palloc_get_multiple(PAL_ZERO, 1);
-    t->ft_page_size = PGSIZE / sizeof(void *);
-    fd = STDOUT_FILENO + 1;
-  }
-  else {
-    for (fd = STDOUT_FILENO + 1; fd < t->ft_page_size; fd++)
-    {
-      if (t->file_table[fd] ==0)
-        break;
-    }
-
-    /* Didn't find empty slot in original file table, need to double
-     * file table size. */
-    if (fd == t->ft_page_size) {
-      int ft_page_num = t->ft_page_size * sizeof(void *) / PGSIZE * 2;
-      struct file ** new_file_table =
-        (struct file **)palloc_get_multiple(PAL_ZERO, ft_page_num);
-      memcpy(new_file_table, t->file_table, t->ft_page_size * sizeof(void *));
-      palloc_free_multiple(t->file_table, t->ft_page_size * sizeof(void *) / PGSIZE);
-      t->file_table = new_file_table;
-      t->ft_page_size = t->ft_page_size * 2;
-    }
-    fd = fd + 1;
-  }
-
-  t->file_table[fd] = file;
-  return fd;
-}
-
-
 void
 syscall_init (void) 
 {

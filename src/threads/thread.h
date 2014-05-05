@@ -97,8 +97,8 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-    struct file **file_table;            /* file table. */
-    uint32_t ft_page_size;              /* page number of the file table. */
+    struct file **file_table;           /* file table. */
+    uint32_t file_table_size;           /* page number of the file table. */
 #endif
 
     struct exit_status *exit_status;    /* Pointer to owning thread's exit status. */
@@ -158,5 +158,8 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+/* Thread operates on files*/
+int thread_add_file(struct file *);
 
 #endif /* threads/thread.h */
