@@ -143,13 +143,7 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-  /* Notify parent thread regarding the exit of current process .
-     Initial thread's exit_status is NULL since it has no parent
-     and it needn't notify anyone of its exit. */
-  if (cur->exit_status != NULL)
-    sema_up(&cur->exit_status->wait_on_exit);
-
-  /* Free all children's exit_status. */
+    /* Free all children's exit_status. */
   lock_acquire(&cur->child_list_lock);
   struct list_elem *e;
   while (!list_empty (&cur->child_list))
@@ -178,6 +172,14 @@ process_exit (void)
     }
   if (cur->exit_status != NULL)
     printf ("%s: exit(%d)\n", cur->name, cur->exit_status->exit_value);
+  
+  /* Notify parent thread regarding the exit of current process .
+     Initial thread's exit_status is NULL since it has no parent
+     and it needn't notify anyone of its exit. */
+  if (cur->exit_status != NULL)
+    sema_up(&cur->exit_status->wait_on_exit);
+
+
 }
 
 /* Sets up the CPU for running user code in the current

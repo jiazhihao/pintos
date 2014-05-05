@@ -18,8 +18,8 @@ static void _halt (void);
 static void _exit (int status);
 static int _wait (int pid);
 static int _write (int fd, const void *buffer, unsigned size);
-static pid_t _exec (char *cmd_line);
-static bool _create (const char *file, uint32_t initial_size);
+static pid_t _exec (const char *cmd_line);
+static bool _create (const char *file, unsigned initial_size);
 static bool _remove (const char *file);
 
 extern struct lock filesys_lock;
@@ -48,6 +48,9 @@ syscall_handler (struct intr_frame *f UNUSED)
       _exit ((int)arg1);
       break;
     case SYS_EXEC:
+      arg1 = get_stack_entry (esp, 1);
+      f->eax = (uint32_t) _exec ((const char *)arg1);
+      break;
     case SYS_WAIT:
       arg1 = get_stack_entry (esp, 1);
       f->eax = (uint32_t) _wait ((int)arg1);
@@ -55,10 +58,12 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_CREATE:
       arg1 = get_stack_entry (esp, 1);
       arg2 = get_stack_entry (esp, 2);
-      f->eax = (uint32_t)_create ((char *)arg1, (uint32_t)arg2);
+      f->eax = (uint32_t)_create ((const char *)arg1, (unsigned)arg2);
+      break;
     case SYS_REMOVE:
       arg1 = get_stack_entry (esp, 1);
-      f->eax = (uint32_t)_remove ((char *)arg1);
+      f->eax = (uint32_t)_remove ((const char *)arg1);
+      break;
     case SYS_OPEN:
     case SYS_FILESIZE:
     case SYS_READ:
@@ -138,7 +143,7 @@ _write (int fd, const void *buffer, unsigned size)
 }
 
 static pid_t
-_exec (char *cmd_line)
+_exec (const char *cmd_line)
 {
   if (strlen (cmd_line) > PGSIZE)
   {
@@ -153,7 +158,7 @@ _exec (char *cmd_line)
 }
 
 static bool
-_create (const char *file, uint32_t initial_size)
+_create (const char *file, unsigned initial_size)
 {
   if (!check_user_memory (file, strlen (file), false))
   {
