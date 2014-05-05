@@ -398,7 +398,7 @@ thread_add_file (struct file *file)
   {
     return -1;
   }
-  int fd = 0;
+  unsigned fd = 0;
 
   struct thread *t = thread_current ();
   if (t->file_table_size == 0) {
