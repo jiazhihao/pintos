@@ -308,8 +308,11 @@ strnlen (const char *string, size_t maxlen)
 {
   size_t length;
 
-  for (length = 0; string[length] != '\0' && length < maxlen; length++)
-    continue;
+  for (length = 0;  length < maxlen; length++)
+  {
+    if (string[length] == '\0')
+      break;
+  }    
   return length;
 }
 

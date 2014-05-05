@@ -145,14 +145,15 @@ _write (int fd, const void *buffer, unsigned size)
 static pid_t
 _exec (const char *cmd_line)
 {
-  if (strlen (cmd_line) > PGSIZE)
-  {
-    return -1;
-  }
-  if (!check_user_memory (cmd_line, strlen (cmd_line), false))
-  {
-    return -1;
-  }
+  unsigned strlen_max;
+  if (!check_user_memory (cmd_line, 0, false))
+    _exit (-1);
+  if (!check_user_memory (cmd_line, PGSIZE, false))
+    strlen_max = pg_round_up (cmd_line) - (const void *)cmd_line;
+  else
+    strlen_max = PGSIZE;
+  if (strnlen (cmd_line, strlen_max) >= strlen_max)
+    _exit (-1);
   pid_t pid = (pid_t)process_execute (cmd_line);
   return pid;
 }
@@ -160,9 +161,17 @@ _exec (const char *cmd_line)
 static bool
 _create (const char *file, unsigned initial_size)
 {
-  if (!check_user_memory (file, strlen (file), false))
+  if (!check_user_memory (file, 0, false))
+  {
+    _exit (-1);
+  }
+  if (strnlen (file, FILE_NAME_LEN) >= FILE_NAME_LEN)
   {
     return 0;
+  }
+  if (!check_user_memory (file, strnlen (file, FILE_NAME_LEN), false))
+  {
+    _exit (-1);
   }
   lock_acquire (&filesys_lock);
   bool success = filesys_create (file, initial_size);
@@ -173,9 +182,17 @@ _create (const char *file, unsigned initial_size)
 static bool
 _remove (const char *file)
 {
-  if (!check_user_memory (file, strlen (file), false))
+  if (!check_user_memory (file, 0, false))
+  {
+    _exit (-1);
+  }
+  if (strnlen (file, FILE_NAME_LEN) >= FILE_NAME_LEN)
   {
     return 0;
+  }
+  if (!check_user_memory (file, strnlen (file, FILE_NAME_LEN), false))
+  {
+    _exit (-1);
   }
   lock_acquire (&filesys_lock);
   bool success = filesys_remove (file);
