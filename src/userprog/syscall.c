@@ -25,6 +25,8 @@ static bool _create (const char *file, unsigned initial_size);
 static bool _remove (const char *file);
 static int _open (const char *file);
 
+static int _filesize (int fd);
+
 extern struct lock filesys_lock;
 
 void
@@ -72,6 +74,9 @@ syscall_handler (struct intr_frame *f UNUSED)
       f->eax = (uint32_t)_open ((char *)arg1);
       break;
     case SYS_FILESIZE:
+      arg1 = get_stack_entry (esp, 1);
+      f->eax = (uint32_t)_filesize ((int)arg1);
+      break;
     case SYS_READ:
     case SYS_WRITE:
       arg1 = get_stack_entry (esp, 1);
@@ -230,4 +235,21 @@ _open (const char *file)
   int fd = fd_table_add (fp);
   lock_release (&filesys_lock);
   return fd;
+}
+
+static int
+_filesize (int fd)
+{
+  struct file *file = thread_get_file (thread_current(), fd);
+  if (file == NULL)
+  {
+    return -1;
+  }
+  else
+  {
+    lock_acquire (&filesys_lock);
+    int size = file_length (file);
+    lock_release (&filesys_lock);
+    return size;
+  }
 }
