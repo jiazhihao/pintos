@@ -398,7 +398,7 @@ thread_add_file (struct thread *t, struct file *file)
   {
     return -1;
   }
-  unsigned fd = 0;
+  int fd = 0;
 
   if (t->file_table_size == 0) {
     t->file_table = (struct file **)palloc_get_multiple(PAL_ZERO, 1);
