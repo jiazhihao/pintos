@@ -3,5 +3,6 @@
 
 #include "threads/thread.h"
 void syscall_init (void);
+void _close (int fd);
 typedef tid_t pid_t;
 #endif /* userprog/syscall.h */

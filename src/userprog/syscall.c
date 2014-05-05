@@ -31,7 +31,7 @@ static int _open (const char *file);
 static int _filesize (int fd);
 static void _seek (int fd, uint32_t position);
 static uint32_t _tell (int fd);
-static void _close (int fd);
+
 
 extern struct lock filesys_lock;
 
@@ -324,7 +324,7 @@ _tell (int fd)
   return result;
 }
 
-static void 
+void 
 _close (int fd)
 {
   struct file *file = thread_get_file (thread_current (), fd);

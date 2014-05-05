@@ -18,6 +18,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "userprog/syscall.h"
 
 extern struct lock filesys_lock;
 
@@ -162,6 +163,15 @@ process_exit (void)
   }
   lock_release(&cur->child_list_lock);
 
+  /*Close all files opened by current process*/
+  int fd;
+  for (fd = STDOUT_FILENO + 1; fd < cur->file_table_size; fd++)
+    if (cur->file_table[fd] != NULL)
+  {
+      _close (fd);
+  }
+  palloc_free_multiple (cur->file_table, cur->file_table_size * sizeof(void *) / PGSIZE);
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -186,8 +196,6 @@ process_exit (void)
      and it needn't notify anyone of its exit. */
   if (cur->exit_status != NULL)
     sema_up(&cur->exit_status->wait_on_exit);
-
-
 }
 
 /* Sets up the CPU for running user code in the current
