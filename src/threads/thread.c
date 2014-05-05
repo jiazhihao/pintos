@@ -391,6 +391,17 @@ thread_get_recent_cpu (void)
   return 0;
 }
 
+
+struct file *
+thread_get_file (struct thread *t, int fd)
+{
+  if (fd < t->file_table_size())
+    return t->file_table[fd];
+  else
+    return NULL;
+}
+
+
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by

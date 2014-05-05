@@ -203,17 +203,6 @@ _write (int fd, const void *buffer, unsigned size)
 static pid_t
 _exec (const char *cmd_line)
 {
-/*
-  unsigned strlen_max;
-  if (!check_user_memory (cmd_line, 0, false))
-    _exit (-1);
-  if (!check_user_memory (cmd_line, PGSIZE, false))
-    strlen_max = pg_round_up (cmd_line) - (const void *)cmd_line;
-  else
-    strlen_max = PGSIZE;
-  if (strnlen (cmd_line, strlen_max) >= strlen_max)
-    _exit (-1);
-*/
   if (!check_user_string (cmd_line))
     _exit (-1);
   pid_t pid = (pid_t)process_execute (cmd_line);
@@ -223,10 +212,6 @@ _exec (const char *cmd_line)
 static bool
 _create (const char *file, unsigned initial_size)
 {
-  //if (!check_filename (file))
-  //{
-    //return false;
-  //}
   if (!check_user_string (file))
     _exit (-1);
   lock_acquire (&filesys_lock);
@@ -238,10 +223,6 @@ _create (const char *file, unsigned initial_size)
 static bool
 _remove (const char *file)
 {
-  //if (!check_filename (file))
-  //{
-    //return false;
-  //}
   if (!check_user_string (file))
     _exit (-1);
   lock_acquire (&filesys_lock);
@@ -253,14 +234,8 @@ _remove (const char *file)
 static int
 _open (const char *file)
 {
-  //if (!check_filename (file))
-  //{
-  //  return -1;
-  //}
-
   if (!check_user_string (file))
     _exit (-1);
-
   lock_acquire (&filesys_lock);
   struct file *fp = filesys_open (file);
   int fd = fd_table_add (fp);
