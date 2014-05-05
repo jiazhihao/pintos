@@ -31,6 +31,8 @@ static int _open (const char *file);
 static int _filesize (int fd);
 static void _seek (int fd, uint32_t position);
 static uint32_t _tell (int fd);
+static void _close (int fd);
+
 extern struct lock filesys_lock;
 
 void
@@ -103,6 +105,8 @@ syscall_handler (struct intr_frame *f UNUSED)
       f->eax = (uint32_t)_tell ((int)arg1);
       break;
     case SYS_CLOSE:
+      arg1 = get_stack_entry (esp, 1);
+      _close ((int)arg1);
       break;
   }	
 }
@@ -298,15 +302,37 @@ static void
 _seek (int fd, uint32_t position)
 {
   struct file *file = thread_get_file (thread_current (), fd);
-  file_seek (file, position);
+  if (file)
+  {
+    lock_acquire (&filesys_lock);
+    file_seek (file, position);
+    lock_release (&filesys_lock);
+  }
 }
 
 static uint32_t
 _tell (int fd)
 {
   struct file *file = thread_get_file (thread_current (), fd);
+  if (file == NULL)
+  {
+    return 0;
+  }
   lock_acquire (&filesys_lock);
   uint32_t result = file_tell (file);
   lock_release (&filesys_lock);
   return result;
+}
+
+static void 
+_close (int fd)
+{
+  struct file *file = thread_get_file (thread_current (), fd);
+  if (file)
+  {
+    lock_acquire (&filesys_lock);
+    file_close (file);
+    lock_release (&filesys_lock);
+    thread_rm_file (thread_current (), fd);
+  }
 }

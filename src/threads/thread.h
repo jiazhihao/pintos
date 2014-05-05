@@ -161,5 +161,6 @@ int thread_get_load_avg (void);
 
 struct file * thread_get_file (struct thread *t, int fd);
 int thread_add_file(struct thread *, struct file *);
+void thread_rm_file (struct thread *t, int fd);
 
 #endif /* threads/thread.h */

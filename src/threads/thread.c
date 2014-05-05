@@ -430,7 +430,14 @@ thread_add_file (struct thread *t, struct file *file)
   return fd;
 }
 
-
+void
+thread_rm_file (struct thread *t, int fd)
+{
+  if (fd < t->file_table_size)
+  {
+    t->file_table[fd] = NULL;
+  }
+}
 
 struct file *
 thread_get_file (struct thread *t, int fd)
