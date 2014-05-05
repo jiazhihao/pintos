@@ -232,7 +232,7 @@ _open (const char *file)
 
   lock_acquire (&filesys_lock);
   struct file *fp = filesys_open (file);
-  int fd = fd_table_add (fp);
+  int fd = thread_add_file (fp);
   lock_release (&filesys_lock);
   return fd;
 }
