@@ -98,7 +98,8 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
     struct file **file_table;           /* file table. */
-    int file_table_size;           /* page number of the file table. */
+    int file_table_size;                /* page number of the file table. */
+    struct file *exec_file;             /* associate exec file of the process. */
 #endif
 
     struct exit_status *exit_status;    /* Pointer to owning thread's exit status. */

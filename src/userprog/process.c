@@ -93,6 +93,15 @@ start_process (void *aux)
   success = success && load (file_name, &if_.eip, &if_.esp)
     && argument_passing (cmd_line, &if_.esp);
 
+  /* Deny write to executable file.
+     keep it open during the process lifetime. */  
+  if (success)
+  {
+    struct thread *cur = thread_current();
+    cur->exec_file = filesys_open (file_name);
+    file_deny_write (cur->exec_file);
+  }
+
   /* If load failed, quit. */
   palloc_free_page (cmd_line);
   start->success = success;
@@ -161,6 +170,13 @@ process_exit (void)
     free(exit_status);
   }
   lock_release(&cur->child_list_lock);
+  
+  /* Re-enable write to exec_file */
+  if (cur->exec_file)
+  {
+    file_allow_write (cur->exec_file);
+    file_close (cur->exec_file);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
