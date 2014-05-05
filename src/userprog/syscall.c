@@ -10,6 +10,7 @@
 #include "userprog/process.h" // process_wait()
 #include <string.h>
 #include "filesys/filesys.h"
+#include "threads/malloc.h"
 
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
@@ -21,8 +22,64 @@ static int _write (int fd, const void *buffer, unsigned size);
 static pid_t _exec (const char *cmd_line);
 static bool _create (const char *file, unsigned initial_size);
 static bool _remove (const char *file);
+static int _open (const char *file);
 
 extern struct lock filesys_lock;
+
+static bool
+check_filename (const char *file)
+{
+  if (!check_user_memory (file, 0, false))
+  {
+    _exit (-1);
+  }
+  if (strnlen (file, FILE_NAME_LEN) >= FILE_NAME_LEN)
+  {
+    return false;
+  }
+  if (!check_user_memory (file, strnlen (file, FILE_NAME_LEN), false))
+  {
+    _exit (-1);
+  }
+  return true;
+}
+
+static int
+fd_table_add (struct file *file)
+{
+  if (file == NULL)
+  {
+    return -1;
+  }
+  struct thread *t = thread_current ();
+  struct list *list = &t->file_list;
+  struct file_node *node = (struct file_node *) malloc (sizeof(struct file_node));
+  if (node == NULL)
+  {
+    return -1;
+  }
+  node->file = file;
+  struct list_elem *e;
+  int fd = 2;
+  for (e = list_begin (list); e != list_end (list); e = list_next (e))
+  {
+    struct file_node *t = list_entry (e, struct file_node, elem);
+    if (t->fd > fd)
+    {
+      list_insert (e, &node->elem);
+      node->fd = fd;
+      return fd;
+    }
+    else
+    {
+      fd++;
+    }
+  }
+  list_push_back (list, &node->elem);
+  node->fd = fd;
+  return fd;
+}
+
 
 void
 syscall_init (void) 
@@ -65,6 +122,9 @@ syscall_handler (struct intr_frame *f UNUSED)
       f->eax = (uint32_t)_remove ((const char *)arg1);
       break;
     case SYS_OPEN:
+      arg1 = get_stack_entry (esp, 1);
+      f->eax = (uint32_t)_open ((char *)arg1);
+      break;
     case SYS_FILESIZE:
     case SYS_READ:
     case SYS_WRITE:
@@ -161,17 +221,9 @@ _exec (const char *cmd_line)
 static bool
 _create (const char *file, unsigned initial_size)
 {
-  if (!check_user_memory (file, 0, false))
+  if (!check_filename (file))
   {
-    _exit (-1);
-  }
-  if (strnlen (file, FILE_NAME_LEN) >= FILE_NAME_LEN)
-  {
-    return 0;
-  }
-  if (!check_user_memory (file, strnlen (file, FILE_NAME_LEN), false))
-  {
-    _exit (-1);
+    return false;
   }
   lock_acquire (&filesys_lock);
   bool success = filesys_create (file, initial_size);
@@ -182,20 +234,26 @@ _create (const char *file, unsigned initial_size)
 static bool
 _remove (const char *file)
 {
-  if (!check_user_memory (file, 0, false))
+  if (!check_filename (file))
   {
-    _exit (-1);
-  }
-  if (strnlen (file, FILE_NAME_LEN) >= FILE_NAME_LEN)
-  {
-    return 0;
-  }
-  if (!check_user_memory (file, strnlen (file, FILE_NAME_LEN), false))
-  {
-    _exit (-1);
+    return false;
   }
   lock_acquire (&filesys_lock);
   bool success = filesys_remove (file);
   lock_release (&filesys_lock);
   return success;
+}
+
+static int
+_open (const char *file)
+{
+  if (!check_filename (file))
+  {
+    return -1;
+  }
+  lock_acquire (&filesys_lock);
+  struct file *fp = filesys_open (file);
+  int fd = fd_table_add (fp);
+  lock_release (&filesys_lock);
+  return fd;
 }

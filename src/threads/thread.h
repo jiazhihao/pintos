@@ -97,6 +97,7 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct list file_list;              /* file list */
 #endif
 
     struct exit_status *exit_status;    /* Pointer to owning thread's exit status. */
@@ -112,6 +113,13 @@ struct exit_status
   int exit_value;                       /* Return value of the owning thread. */
   struct semaphore wait_on_exit;        /* Synchronization between parent's wait and child's exit. */
   struct list_elem elem;                /* List elem for thread's child_list*/
+};
+
+struct file_node
+{
+  struct file *file;
+  struct list_elem elem;
+  int fd;
 };
 
 /* If false (default), use round-robin scheduler.
