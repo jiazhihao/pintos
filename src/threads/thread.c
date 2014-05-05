@@ -435,7 +435,7 @@ thread_add_file (struct thread *t, struct file *file)
 struct file *
 thread_get_file (struct thread *t, int fd)
 {
-  if (fd < t->file_table_size)
+  if (fd > 0 && fd < t->file_table_size)
     return t->file_table[fd];
   else
     return NULL;
