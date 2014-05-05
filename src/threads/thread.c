@@ -392,7 +392,7 @@ thread_get_recent_cpu (void)
 }
 
 int
-thread_add_file (struct file *file)
+thread_add_file (struct thread *t, struct file *file)
 {
   if (file == NULL)
   {
@@ -400,7 +400,6 @@ thread_add_file (struct file *file)
   }
   int fd = 0;
 
-  struct thread *t = thread_current ();
   if (t->file_table_size == 0) {
     t->file_table = (struct file **)palloc_get_multiple(PAL_ZERO, 1);
     t->file_table_size = PGSIZE / sizeof(void *);
@@ -423,8 +422,8 @@ thread_add_file (struct file *file)
       palloc_free_multiple(t->file_table, t->file_table_size * sizeof(void *) / PGSIZE);
       t->file_table = new_file_table;
       t->file_table_size = t->file_table_size * 2;
+      fd = fd + 1;
     }
-    fd = fd + 1;
   }
 
   t->file_table[fd] = file;
@@ -432,6 +431,17 @@ thread_add_file (struct file *file)
 }
 
 
+
+struct file *
+thread_get_file (struct thread *t, int fd)
+{
+  if (fd < t->file_table_size)
+    return t->file_table[fd];
+  else
+    return NULL;
+}
+
+
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
