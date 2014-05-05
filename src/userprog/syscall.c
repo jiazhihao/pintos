@@ -26,24 +26,6 @@ static int _open (const char *file);
 
 extern struct lock filesys_lock;
 
-static bool
-check_filename (const char *file)
-{
-  if (!check_user_memory (file, 0, false))
-  {
-    _exit (-1);
-  }
-  if (strnlen (file, FILE_NAME_LEN) >= FILE_NAME_LEN)
-  {
-    return false;
-  }
-  if (!check_user_memory (file, strnlen (file, FILE_NAME_LEN), false))
-  {
-    _exit (-1);
-  }
-  return true;
-}
-
 static int
 fd_table_add (struct file *file)
 {
@@ -167,6 +149,22 @@ get_stack_entry (uint32_t *esp, size_t offset)
   return *(esp + offset);
 }
 
+/* Check whether a string given by the user is valid. */
+static bool
+check_user_string (const char *str)
+{
+  unsigned strlen_max;
+  if (!check_user_memory (str, 0, false))
+    return 0;
+  if (!check_user_memory (str, PGSIZE, false))
+    strlen_max = pg_round_up (str) - (const void *)str;
+  else
+    strlen_max = PGSIZE;
+  if (strnlen (str, strlen_max) >= strlen_max)
+    return 0;
+  return 1;
+}
+
 static void 
 _halt (void)
 {
@@ -205,6 +203,7 @@ _write (int fd, const void *buffer, unsigned size)
 static pid_t
 _exec (const char *cmd_line)
 {
+/*
   unsigned strlen_max;
   if (!check_user_memory (cmd_line, 0, false))
     _exit (-1);
@@ -214,6 +213,9 @@ _exec (const char *cmd_line)
     strlen_max = PGSIZE;
   if (strnlen (cmd_line, strlen_max) >= strlen_max)
     _exit (-1);
+*/
+  if (!check_user_string (cmd_line))
+    _exit (-1);
   pid_t pid = (pid_t)process_execute (cmd_line);
   return pid;
 }
@@ -221,10 +223,12 @@ _exec (const char *cmd_line)
 static bool
 _create (const char *file, unsigned initial_size)
 {
-  if (!check_filename (file))
-  {
-    return false;
-  }
+  //if (!check_filename (file))
+  //{
+    //return false;
+  //}
+  if (!check_user_string (file))
+    _exit (-1);
   lock_acquire (&filesys_lock);
   bool success = filesys_create (file, initial_size);
   lock_release (&filesys_lock);
@@ -234,10 +238,12 @@ _create (const char *file, unsigned initial_size)
 static bool
 _remove (const char *file)
 {
-  if (!check_filename (file))
-  {
-    return false;
-  }
+  //if (!check_filename (file))
+  //{
+    //return false;
+  //}
+  if (!check_user_string (file))
+    _exit (-1);
   lock_acquire (&filesys_lock);
   bool success = filesys_remove (file);
   lock_release (&filesys_lock);
@@ -247,10 +253,14 @@ _remove (const char *file)
 static int
 _open (const char *file)
 {
-  if (!check_filename (file))
-  {
-    return -1;
-  }
+  //if (!check_filename (file))
+  //{
+  //  return -1;
+  //}
+
+  if (!check_user_string (file))
+    _exit (-1);
+
   lock_acquire (&filesys_lock);
   struct file *fp = filesys_open (file);
   int fd = fd_table_add (fp);
