@@ -446,7 +446,7 @@ thread_rm_file (struct thread *t, int fd)
 struct file *
 thread_get_file (struct thread *t, int fd)
 {
-  if (fd < t->file_table_size)
+  if (fd > 0 && fd < t->file_table_size)
     return t->file_table[fd];
   else
     return NULL;
@@ -544,6 +544,7 @@ init_thread (struct thread *t, const char *name, int priority)
   lock_init(&t->child_list_lock);
   t->exit_status = NULL;
   t->file_table_size = 0;
+  t->exec_file = NULL;  
  
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
