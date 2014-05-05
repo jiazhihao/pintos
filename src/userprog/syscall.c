@@ -210,10 +210,16 @@ _open (const char *file)
 {
   if (!check_user_string (file))
     _exit (-1);
+  int fd;
   lock_acquire (&filesys_lock);
   struct file *fp = filesys_open (file);
-  int fd = thread_add_file (thread_current(), fp);
+  if (fp==NUll)
+    fd = -1;
+  else
+    fd = thread_add_file (thread_current(), fp);
   lock_release (&filesys_lock);
+  if (fd==-1)
+    _exit(-1);
   return fd;
 }
 
