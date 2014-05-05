@@ -64,7 +64,14 @@ process_execute (const char *cmd_line)
   {
     sema_down (&start.sema);
   }
-  return tid;
+  if (start.success)
+  {
+    return tid;
+  }
+  else
+  {
+    return -1;
+  }
 }
 
 /* A thread function that loads a user process and starts it
@@ -88,6 +95,7 @@ start_process (void *aux)
 
   /* If load failed, quit. */
   palloc_free_page (cmd_line);
+  start->success = success;
   sema_up (&start->sema);
   if (!success)
     thread_exit ();
