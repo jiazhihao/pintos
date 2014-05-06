@@ -392,6 +392,8 @@ thread_get_recent_cpu (void)
   return 0;
 }
 
+/* Add a file to the thread's file table. 
+ * Allocate space for file table if necessary. */
 int
 thread_add_file (struct thread *t, struct file *file)
 {
@@ -435,6 +437,7 @@ thread_add_file (struct thread *t, struct file *file)
   return fd;
 }
 
+/* Remove file from file table. */
 void
 thread_rm_file (struct thread *t, int fd)
 {
@@ -444,6 +447,7 @@ thread_rm_file (struct thread *t, int fd)
   }
 }
 
+/* Get file from file table. */
 struct file *
 thread_get_file (struct thread *t, int fd)
 {

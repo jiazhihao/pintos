@@ -111,6 +111,7 @@ struct thread
     unsigned magic;                     /* Detects stack overflow. */
   };
 
+/* Used for wait and exit system calls */
 struct exit_status
 {
   int pid;                              /* Thread Process id. */
@@ -120,6 +121,7 @@ struct exit_status
   struct thread *thread;                /* Pointer to the owning thread. */
 };
 
+/* Used for file table. */
 struct file_node
 {
   struct file *file;
