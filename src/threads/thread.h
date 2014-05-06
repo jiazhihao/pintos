@@ -100,6 +100,8 @@ struct thread
     struct file **file_table;           /* file table. */
     int file_table_size;                /* page number of the file table. */
     struct file *exec_file;             /* associate exec file of the process. */
+    int exit_value;                     /* Exit value of the process. */
+    bool is_user;                       /* Flag to identify whether the thread is user process. */
 #endif
 
     struct exit_status *exit_status;    /* Pointer to owning thread's exit status. */
@@ -109,14 +111,17 @@ struct thread
     unsigned magic;                     /* Detects stack overflow. */
   };
 
+/* Used for wait and exit system calls */
 struct exit_status
 {
   int pid;                              /* Thread Process id. */
   int exit_value;                       /* Return value of the owning thread. */
   struct semaphore wait_on_exit;        /* Synchronization between parent's wait and child's exit. */
   struct list_elem elem;                /* List elem for thread's child_list*/
+  struct thread *thread;                /* Pointer to the owning thread. */
 };
 
+/* Used for file table. */
 struct file_node
 {
   struct file *file;

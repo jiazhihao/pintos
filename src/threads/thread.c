@@ -188,6 +188,7 @@ thread_create (const char *name, int priority,
   t->exit_status->exit_value = -1;
   sema_init(&t->exit_status->wait_on_exit, 0);
   t->exit_status->pid = tid;
+  t->exit_status->thread = t;
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -391,6 +392,8 @@ thread_get_recent_cpu (void)
   return 0;
 }
 
+/* Add a file to the thread's file table. 
+ * Allocate space for file table if necessary. */
 int
 thread_add_file (struct thread *t, struct file *file)
 {
@@ -434,6 +437,7 @@ thread_add_file (struct thread *t, struct file *file)
   return fd;
 }
 
+/* Remove file from file table. */
 void
 thread_rm_file (struct thread *t, int fd)
 {
@@ -443,6 +447,7 @@ thread_rm_file (struct thread *t, int fd)
   }
 }
 
+/* Get file from file table. */
 struct file *
 thread_get_file (struct thread *t, int fd)
 {
@@ -545,6 +550,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->exit_status = NULL;
   t->file_table_size = 0;
   t->exec_file = NULL;  
+  t->exit_value = -1;
+  t->is_user = false;
  
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
