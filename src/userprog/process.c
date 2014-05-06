@@ -604,7 +604,7 @@ argument_passing (char *cmd_line, void **esp)
   {
     return 0;
   }
-  *esp = *esp - len + (argc + 4) * WORD_SIZE;
+  *esp -= len + (argc + 4) * WORD_SIZE;
   char **arg_start = *esp;
   char *str_start = (char *)(arg_start + (argc + 4));
   *arg_start++ = 0;
