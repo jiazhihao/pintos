@@ -62,6 +62,52 @@ FirstName LastName <email@domain.example>
 >> B3: Describe your code for reading and writing user data from the
 >> kernel.
 
+Kernel reads or write user data through pointers passed to system calls.
+Before referencing any user provided pointers in system calls, the kernel 
+checks whether the pointer is valid. Once the kernel makes sure the pointer
+is valid, the pointer can be dereferenced to read or write user data.
+
+A user provided pointer can be invalid in three ways: 
+(a) a null pointer
+(b) a pointer to kernel virtual address
+(c) a pointer to unmapped virutal memory
+
+A user provided pointer can be categorized into two types - buffer and string -
+and in both cases kernel will check the invalidation cases mentioned above.
+Yet the way for the (b) and (c) checking is different for buffer and string, 
+which will be described in details as below.
+
+(1) Buffer
+A buffer pointer is the beginning address of a buffer with explict size, which 
+is used as arguments in write and read system calls. The kernel first check 
+whether the pointer is null and then check whether buffer and buffer+size are 
+both within the user virtual address space. At last, the kernel makes sure each
+page involved between buffer to buffer+size is "valid" by calling lookup_page
+to get page table entry for the page. For read syscall, "valid" means the 
+corresponding page entry is non-empty, present and of user mode. For write 
+syscall, "valid" means the page entry is non-empty, present, of user mode and
+writable. If any page within the buffer range is invalid, the buffer pointer
+is invalid and the kernel should call exit(-1) to terminate the process.
+
+(2) String
+A string pointer is a const char * without a explict size given. It could be 
+a pointer to file name or arguments, which are used in argument passing, 
+exec, create, remove and open syscalls. A string is limited to PGSIZE (4KB) 
+in our implementation. To check if a string pointer is valid, the kernel
+first check if the pointer is null and whether it is in user virtual address
+space. Since the kernel has no idea if the string spans two pages, it first 
+checks whether the page the string beginning address at is valid. If it is 
+not, the pointer is surely invalid. Otherwise, it could either be that the 
+string's end address is within the same page as its beginning and it's valid
+or the string spans two pages. Thus the kernel then checks whether the next 
+page is valid. If it is not, then the string has to be in the first page with
+maximum length of pg_round_up(string) - string. If the next page is also
+valid, the maximum length is PGSIZE. Lastly, the kernel checks whether there 
+is '\0' within the maximum length inferred above. If there is then the string
+is valid, otherwise invalid (either too long or reaches invalid address). 
+In any case of string invalidation, the kernel terminates the process by 
+calling exit(-1).
+
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
 >> and the greatest possible number of inspections of the page table
@@ -85,6 +131,8 @@ FirstName LastName <email@domain.example>
 >> allocated resources (locks, buffers, etc.) are freed?  In a few
 >> paragraphs, describe the strategy or strategies you adopted for
 >> managing these issues.  Give an example.
+
+Our implementation
 
 ---- SYNCHRONIZATION ----
 
