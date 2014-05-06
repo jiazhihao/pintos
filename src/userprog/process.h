@@ -4,7 +4,7 @@
 #include "threads/thread.h"
 #include "threads/synch.h"
 #define FILE_NAME_LEN 16
-#define LONG_SIZE 4
+#define WORD_SIZE 4
 tid_t process_execute (const char *file_name);
 int process_wait (tid_t);
 void process_exit (void);

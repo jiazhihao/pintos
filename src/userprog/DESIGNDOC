@@ -1,8 +1,8 @@
-		     +--------------------------+
-         | CS 140	                  |
-		     | PROJECT 2: USER PROGRAMS	|
-		     | DESIGN DOCUMENT        	|
-		     +--------------------------+
+                     +--------------------------+
+                     | CS 140                   |
+                     | PROJECT 2: USER PROGRAMS |
+                     | DESIGN DOCUMENT          |
+                     +--------------------------+
 
 ---- GROUP ----
 
@@ -30,19 +30,87 @@ FirstName LastName <email@domain.example>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+-- process.h --
+New defines:
+#define FILE_NAME_LEN 16
+#define WORD_SIZE 4
+
+The FILE_NAME_LEN used to confine the file name length. The number 16 is 
+decided according to the fact that the file name cannot exceed 14 and the name 
+of the thread is a char[16]. 
+
+The WORD_SIZE is the size of a pointer or int, which is 4 byte in pintos. This 
+is used to easily construct the stack.
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe how you implemented argument parsing.  How do
 >> you arrange for the elements of argv[] to be in the right order?
 >> How do you avoid overflowing the stack page?
 
+Argument passing is done inside the start_process() after the load(). The 
+stack and the esp have been set up inside the load(), so now we just need to 
+put the arguments into the stack and set the esp pointer. All these are done 
+inside argument_passing(). I actually pass the cmd_line twice.
+
+The first pass is done inside calculate_len(). During this pass, I calculate 
+the number of arguments (argc) in the cmd_line and calculate how many bytes are 
+needed to store these arguments (len). The len is basicly the length of the 
+cmd_line minus the number of spaces and plus the argc, because each argument 
+need a '\0'. The stack structure is determined once we get the argc and the 
+len. And at this point, I check whether the stack overflow one page. If 
+overflow, the thread will exit. If not, I set the esp to the right place, put 
+return address, argc, argv to the right place.
+
+Now we set two pointer argv_start and str_start to the address of the argv[0] 
+and the address of the first argument string and then start the second pass. 
+In this pass, I split the cmd_line to tokens by space. For each token,  put 
+the token to str_start, set *argv_start = str_start. Then increase argv_start 
+and str_start and process the next token. At the end, set argv[argc] = 0.
+
+In my argument passing, the stack is exactly same as is showed in the figure 
+in the handout, except one thing: the empty bytes used to align the stack to 
+4 bytes will be at the bottom of the stack, i.e. the highest address. 
+
 ---- RATIONALE ----
 
 >> A3: Why does Pintos implement strtok_r() but not strtok()?
 
+strtok is thread unsafe. The strtok() function uses a static  buffer  while  
+parsing, so if thread1 call strtok(str1, delim) then thread2 call 
+strtok(str2, delim), when after than thread1 call strtok(NULL, delim), the 
+inside static buffer contains str2 not str1, so thread1 will receive a wrong 
+result.
+
+strtok_r does not have any data that is shared between threads. It uses the 
+save_ptr, which is defined by the user, to store the remained part of the 
+string. strtok_r is a reentrant function, which better suits the need of an OS.
+
 >> A4: In Pintos, the kernel separates commands into a executable name
 >> and arguments.  In Unix-like systems, the shell does this
 >> separation.  Identify at least two advantages of the Unix approach.
+
+The main difference is that the shell is also an application software. So in 
+Unix, it is an application program that separates the filename from arguments, 
+and make a syscall "execute()" to run users' program. This difference gives 
+Unix many advantages, including:
+
+1. It is safer to let an application program parse the command line, because it 
+runs in user mode and connect to the kernel through syscall. The shell will 
+do some safety check and it is forbidden to do many things because it is in 
+user mode. If the command line is directly given to the kernel, like in 
+Pintos, it will be much easier for a evil user to hack the system because what 
+he input in the command line will be directly used and interpreted under a 
+kernel mode, which has most privilege to modify the system.
+
+2. Implementing command line parser in shell not in kernel keeps kernel as 
+light as possible and make the system more flexible. To improve user 
+experience, many feature will be needed in the command line parser, like using 
+"|" to run multiple program, using ">" to redirect I/O, using relative path 
+instead of absolute path and using "&" to run background program. Implementing 
+all these in shell keeps kernel light. And when we want to add more features 
+or when user wants to do some customization, we do not need to to modify the 
+kernel, just do it in shell. It is more flexible.
 
 			     SYSTEM CALLS
 			     ============
@@ -52,6 +120,14 @@ FirstName LastName <email@domain.example>
 >> B1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+
+ -- process.h --
+struct start_status
+{
+  bool success;
+  struct semaphore sema;
+  char *cmd_line;
+};
 
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a
@@ -68,6 +144,22 @@ FirstName LastName <email@domain.example>
 >> (e.g. calls to pagedir_get_page()) that might result?  What about
 >> for a system call that only copies 2 bytes of data?  Is there room
 >> for improvement in these numbers, and how much?
+
+A full page of continuous data can fit in one page and can maximally span in 
+two page. So we need to at least do one inspection of the page table and 
+at most do two inspection of the page table.
+
+The 2 byte data can fit in one page and can maximally span in two page. So it 
+is just the same as dealing with a full page of data. We need to do at least 
+one check and at most 2 check.
+
+We can improve this by alignment. For example, we can align to 2 bytes, which 
+means a 2 bytes data can only start at an address like 0bXXXX....XX0. In this 
+way the 2 bytes data cannot span in 2 pages. We can also align to larger 
+number of bytes, like 8 bytes, then access to a 8 byte-long data will at most 
+incur one page table check. If we align to one page, then a full page of data 
+also can only incur one page table check. But as we align to larger number of 
+bytes, we will waste more memory and create more fragmentation.
 
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
@@ -92,6 +184,28 @@ FirstName LastName <email@domain.example>
 >> fails, so it cannot return before the new executable has completed
 >> loading.  How does your code ensure this?  How is the load
 >> success/failure status passed back to the thread that calls "exec"?
+
+Here it's basically a synchronization between process_execute() and 
+start_process(). 
+
+Originally, process_execute() call thread_create() and pass the file_name into 
+it. In this way, we cannot know whether the start_process succeed or not. So I 
+add a struct start_status, inside this struct, there are a success flag, a 
+semaphore and the cmd_line. 
+
+I initiate the semaphore inside the process_execute, copy cmd_line in to this 
+struct and then pass this struct to start_process. After thread_create, the 
+process_execute wait for the start_process to run using a sema_down. Inside 
+the start_process, which is in another thread, it does something to start the 
+program using the cmd_line and set the success flag inside the struct 
+start_status according to whether it successfully start the program. Once it 
+know whether succeed or not, it use sema_up to wake up the process_execute. 
+Once process_execute is waken up, it can check the success flag inside the 
+struct start_status.
+
+In this way, I ensure that the process_execute will not return until the 
+start_process know whether the process is started successfully. And the status 
+can also be passed back.
 
 >> B8: Consider parent process P with child process C.  How do you
 >> ensure proper synchronization and avoid race conditions when P

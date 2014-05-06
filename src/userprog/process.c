@@ -594,12 +594,12 @@ argument_passing (char *cmd_line, void **esp)
   {
     return 0;
   }
-  len = ROUND_UP (len, LONG_SIZE);
-  if (len + LONG_SIZE * (argc + 4) > PGSIZE)
+  len = ROUND_UP (len, WORD_SIZE);
+  if (len + WORD_SIZE * (argc + 4) > PGSIZE)
   {
     return 0;
   }
-  *esp -= len + (argc + 4) * LONG_SIZE;
+  *esp = *esp - len + (argc + 4) * WORD_SIZE;
   char **arg_start = *esp;
   char *str_start = (char *)(arg_start + (argc + 4));
   *arg_start++ = 0;
