@@ -8,12 +8,12 @@
 
 /* States in a thread's life cycle. */
 enum thread_status
-  {
-    THREAD_RUNNING,     /* Running thread. */
-    THREAD_READY,       /* Not running but ready to run. */
-    THREAD_BLOCKED,     /* Waiting for an event to trigger. */
-    THREAD_DYING        /* About to be destroyed. */
-  };
+{
+  THREAD_RUNNING,     /* Running thread. */
+  THREAD_READY,       /* Not running but ready to run. */
+  THREAD_BLOCKED,     /* Waiting for an event to trigger. */
+  THREAD_DYING        /* About to be destroyed. */
+};
 
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
@@ -33,42 +33,42 @@ typedef int tid_t;
    thread's kernel stack, which grows downward from the top of
    the page (at offset 4 kB).  Here's an illustration:
 
-        4 kB +---------------------------------+
-             |          kernel stack           |
-             |                |                |
-             |                |                |
-             |                V                |
-             |         grows downward          |
-             |                                 |
-             |                                 |
-             |                                 |
-             |                                 |
-             |                                 |
-             |                                 |
-             |                                 |
-             |                                 |
-             +---------------------------------+
-             |              magic              |
-             |                :                |
-             |                :                |
-             |               name              |
-             |              status             |
-        0 kB +---------------------------------+
+   4 kB +---------------------------------+
+   |          kernel stack           |
+   |                |                |
+   |                |                |
+   |                V                |
+   |         grows downward          |
+   |                                 |
+   |                                 |
+   |                                 |
+   |                                 |
+   |                                 |
+   |                                 |
+   |                                 |
+   |                                 |
+   +---------------------------------+
+   |              magic              |
+   |                :                |
+   |                :                |
+   |               name              |
+   |              status             |
+   0 kB +---------------------------------+
 
    The upshot of this is twofold:
 
-      1. First, `struct thread' must not be allowed to grow too
-         big.  If it does, then there will not be enough room for
-         the kernel stack.  Our base `struct thread' is only a
-         few bytes in size.  It probably should stay well under 1
-         kB.
+   1. First, `struct thread' must not be allowed to grow too
+   big.  If it does, then there will not be enough room for
+   the kernel stack.  Our base `struct thread' is only a
+   few bytes in size.  It probably should stay well under 1
+   kB.
 
-      2. Second, kernel stacks must not be allowed to grow too
-         large.  If a stack overflows, it will corrupt the thread
-         state.  Thus, kernel functions should not allocate large
-         structures or arrays as non-static local variables.  Use
-         dynamic allocation with malloc() or palloc_get_page()
-         instead.
+   2. Second, kernel stacks must not be allowed to grow too
+   large.  If a stack overflows, it will corrupt the thread
+   state.  Thus, kernel functions should not allocate large
+   structures or arrays as non-static local variables.  Use
+   dynamic allocation with malloc() or palloc_get_page()
+   instead.
 
    The first symptom of either of these problems will probably be
    an assertion failure in thread_current(), which checks that
@@ -82,44 +82,44 @@ typedef int tid_t;
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
 struct thread
-  {
-    /* Owned by thread.c. */
-    tid_t tid;                          /* Thread identifier. */
-    enum thread_status status;          /* Thread state. */
-    char name[16];                      /* Name (for debugging purposes). */
-    uint8_t *stack;                     /* Saved stack pointer. */
-    int priority;                       /* Priority. */
-    struct list_elem allelem;           /* List element for all threads list. */
+{
+  /* Owned by thread.c. */
+  tid_t tid;                          /* Thread identifier. */
+  enum thread_status status;          /* Thread state. */
+  char name[16];                      /* Name (for debugging purposes). */
+  uint8_t *stack;                     /* Saved stack pointer. */
+  int priority;                       /* Priority. */
+  struct list_elem allelem;           /* List element for all threads list. */
 
-    /* Shared between thread.c and synch.c. */
-    struct list_elem elem;              /* List element. */
+  /* Shared between thread.c and synch.c. */
+  struct list_elem elem;              /* List element. */
 
 #ifdef USERPROG
-    /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
-    struct file **file_table;           /* File table of current thread. */
-    int file_table_size;                /* The size of the file table. */
-    struct file *exec_file;             /* Assoc. exec file of the process. */
-    int exit_value;                     /* Exit value of the process. */
-    bool is_user;                       /* Flag to identify whether the 
-                                           thread is user process. */
+  /* Owned by userprog/process.c. */
+  uint32_t *pagedir;                  /* Page directory. */
+  struct file **file_table;           /* File table of current thread. */
+  int file_table_size;                /* The size of the file table. */
+  struct file *exec_file;             /* Assoc. exec file of the process. */
+  int exit_value;                     /* Exit value of the process. */
+  bool is_user;                       /* Flag to identify whether the 
+                                         thread is user process. */
 #endif
 
-    struct exit_status *exit_status;    /* Pointer to owning thread's 
-                                           exit status. */
-    struct list child_list;             /* List for all child thread. */
-    struct lock child_list_lock;        /* Lock for child list*/
+  struct exit_status *exit_status;    /* Pointer to owning thread's
+                                         exit status. */
+  struct list child_list;             /* List for all child thread. */
+  struct lock child_list_lock;        /* Lock for child list*/
 
-    /* Owned by thread.c. */
-    unsigned magic;                     /* Detects stack overflow. */
-  };
+  /* Owned by thread.c. */
+  unsigned magic;                     /* Detects stack overflow. */
+};
 
 /* Used for wait and exit system calls */
 struct exit_status
 {
   int pid;                              /* Thread Process id. */
   int exit_value;                       /* Return value of the owning thread. */
-  struct semaphore wait_on_exit;        /* Synchronization between parent's 
+  struct semaphore wait_on_exit;        /* Synchronization between parent's
                                            wait and child's exit. */
   struct list_elem elem;                /* List elem for thread's child_list*/
   struct thread *thread;                /* Pointer to the owning thread. */
@@ -162,7 +162,7 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 struct file * thread_get_file (struct thread *t, int fd);
-int thread_add_file(struct thread *, struct file *);
+int thread_add_file (struct thread *, struct file *);
 void thread_rm_file (struct thread *t, int fd);
 
 #endif /* threads/thread.h */
