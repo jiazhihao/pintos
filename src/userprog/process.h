@@ -16,9 +16,10 @@ bool calculate_len (char *argv, int *argc, int *len);
 
 struct start_status
 {
-  bool success;
-  struct semaphore sema;
-  char *cmd_line;
+  bool success;                     /* True if load is successful */
+  struct semaphore sema;            /* Used to synchronize between
+                                       process_execute() and start_process */
+  char *cmd_line;                   /* Used to pass the cmd_line to loader */
 };
 
 #endif /* userprog/process.h */

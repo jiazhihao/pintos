@@ -125,14 +125,6 @@ struct exit_status
   struct thread *thread;                /* Pointer to the owning thread. */
 };
 
-/* Used for file table. */
-struct file_node
-{
-  struct file *file;
-  struct list_elem elem;
-  int fd;
-};
-
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */

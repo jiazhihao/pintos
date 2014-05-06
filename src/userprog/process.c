@@ -569,6 +569,7 @@ install_page (void *upage, void *kpage, bool writable)
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 
+/* Get the file name from the command line */
 bool
 get_file_name (char *cmd_line, char *file_name)
 {
@@ -586,6 +587,7 @@ get_file_name (char *cmd_line, char *file_name)
   return 1;
 }
 
+/* Split the argument, push them into stack and set esp */
 bool
 argument_passing (char *cmd_line, void **esp)
 {
@@ -623,6 +625,7 @@ argument_passing (char *cmd_line, void **esp)
   return 1;
 }
 
+/* Calculate the argc and the space length needed to store all arguments */
 bool
 calculate_len (char *argv, int *argc, int *len)
 {
