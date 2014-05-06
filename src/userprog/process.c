@@ -190,7 +190,8 @@ process_exit (void)
   {
       _close (fd);
   }
-  palloc_free_multiple (cur->file_table, cur->file_table_size * sizeof(void *) / PGSIZE);
+  palloc_free_multiple (cur->file_table, cur->file_table_size * 
+                        sizeof(void *) / PGSIZE);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
