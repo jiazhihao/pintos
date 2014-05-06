@@ -164,6 +164,7 @@ static void
 _exit (int status)
 {
   struct thread* cur = thread_current();
+  cur->exit_value = status;
   if (cur->exit_status != NULL)
     cur->exit_status->exit_value = status;
   thread_exit ();
