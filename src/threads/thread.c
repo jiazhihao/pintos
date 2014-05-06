@@ -210,7 +210,6 @@ thread_create (const char *name, int priority,
   {
     lock_acquire(&parent->child_list_lock);
     list_push_back(&parent->child_list, &t->exit_status->elem);
-    //TODO(zhihao): add reference counter, add isExit flag
     lock_release(&parent->child_list_lock);
   }
 
