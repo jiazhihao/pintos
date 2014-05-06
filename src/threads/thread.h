@@ -99,14 +99,17 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
     struct file **file_table;           /* file table. */
     int file_table_size;                /* page number of the file table. */
-    struct file *exec_file;             /* associate exec file of the process. */
+    struct file *exec_file;             /* Assoc. exec file of the process. */
     int exit_value;                     /* Exit value of the process. */
-    bool is_user;                       /* Flag to identify whether the thread is user process. */
+    bool is_user;                       /* Flag to identify whether the 
+                                           thread is user process. */
 #endif
 
-    struct exit_status *exit_status;    /* Pointer to owning thread's exit status. */
+    struct exit_status *exit_status;    /* Pointer to owning thread's 
+                                           exit status. */
     struct list child_list;             /* List for all child thread. */
     struct lock child_list_lock;        /* Lock for child list*/
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
@@ -116,7 +119,8 @@ struct exit_status
 {
   int pid;                              /* Thread Process id. */
   int exit_value;                       /* Return value of the owning thread. */
-  struct semaphore wait_on_exit;        /* Synchronization between parent's wait and child's exit. */
+  struct semaphore wait_on_exit;        /* Synchronization between parent's 
+                                           wait and child's exit. */
   struct list_elem elem;                /* List elem for thread's child_list*/
   struct thread *thread;                /* Pointer to the owning thread. */
 };
