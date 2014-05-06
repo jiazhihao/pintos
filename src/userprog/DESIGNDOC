@@ -125,9 +125,10 @@ kernel, just do it in shell. It is more flexible.
 New struct in 'process.h'
 struct start_status
 {
-  bool success;
-  struct semaphore sema;
-  char *cmd_line;
+  bool success;                       /* True if load is successful */
+  struct semaphore sema;              /* Used to synchronize between 
+                                         process_execute() and start_process */
+  char *cmd_line;                     /* Used to pass the cmd_line to loader */
 };
 
 -- thread.h --
@@ -140,7 +141,7 @@ New struct in 'thread.h':
     struct semaphore wait_on_exit;    /* Synchronization between parent's 
                                          wait and child's exit. */
     struct list_elem elem;            /* List elem for thread's child_list. */
-    struct thread *thread;                /* Pointer to the owning thread. */
+    struct thread *thread;            /* Pointer to the owning thread. */
   };
 
 New members in struct thread:
@@ -148,7 +149,8 @@ New members in struct thread:
   int file_table_size;                /* The size of the file table. */
   struct file *exec_file;             /* Associate exec file of the process. */
   int exit_value;                     /* Exit value of the process. */
-  bool is_user;                       /* Flag to identify whether the thread is user process. */
+  bool is_user;                       /* Flag to identify whether the thread 
+                                         is user process. */
   struct exit_status *exit_status;    /* Pointer to owning thread's exit
                                          status. */
   struct list child_list;             /* List for all children thread. */
