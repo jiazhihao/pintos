@@ -21,6 +21,8 @@ Tai Guo <taig@stanford.edu>
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
 
+None.
+
 			   ARGUMENT PASSING
 			   ================
 
@@ -344,6 +346,7 @@ can also be passed back.
 >> that all resources are freed in each case?  How about when P
 >> terminates without waiting, before C exits?  After C exits?  Are
 >> there any special cases?
+
 We introduce a new struct 'exit_status' to guarantee proper
 synchronization between parent process and child process, and avoid
 race conditions. The functionality of each member in struct 
@@ -420,15 +423,18 @@ amortized cost for each operation is as low as before.
 3. Memory efficiency in file table. Memory consumption is critical in operating
 system. We introduce the following to mechanism to optimize memory cost of
 file table.
+
 3.1 We allow reuse of file descriptors. When a file is closed, the operating
 system can reuse closed file's entry to serve new opening file, and can return
 the old file descriptor.
+
 3.2 The file table size is doubled only if the original file table is full,
 which means at the moment when we create new file table, at least half of its
 entries hold pointers to opening files.
 
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
+
 We use the defacult identity mapping between tid_t and pid_t for simplicity.
 
 			   SURVEY QUESTIONS
