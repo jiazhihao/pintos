@@ -118,6 +118,21 @@ calling _exit(-1).
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
 
+wait system call directly calls process_wait. Notice that every thread 
+maintains a child_list whose elements are struct exit_status. In 
+process_wait, the parent thread iterate its child_list to search for 
+a child with the argument pid. If no such pid is found, just return -1.
+Otherwise, wait the child to exit by calling sema_down of the child's
+exit_status struct's semaphore.
+
+When the child exits, in process_exit, the thread calls sema_up of its
+exit_status struct's semaphore, which notifies the parent that it has exited.
+Since exit_status is only freed when parent exits, the semaphore value will
+be kept even when the parent wait after the child exits.
+
+After the parent recovers from sema_down (the child has exited), it removes
+the child from the child_list and releases the child's exit_status.
+
 >> B6: Any access to user program memory at a user-specified address
 >> can fail due to a bad pointer value.  Such accesses must cause the
 >> process to be terminated.  System calls are fraught with such
@@ -133,7 +148,7 @@ calling _exit(-1).
 >> managing these issues.  Give an example.
 
 Our implementation verifies the validity of a user provided pointer before
-dereference it. 
+dereference it.  
 
 (1) To avoid obscuring the primary function of error-handling
 We designed two utility functions to check whether a user provided string or
@@ -169,8 +184,6 @@ process' executable file.
 >> fails, so it cannot return before the new executable has completed
 >> loading.  How does your code ensure this?  How is the load
 >> success/failure status passed back to the thread that calls "exec"?
-
-We used a 
 
 >> B8: Consider parent process P with child process C.  How do you
 >> ensure proper synchronization and avoid race conditions when P
