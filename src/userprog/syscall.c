@@ -93,7 +93,8 @@ syscall_handler (struct intr_frame *f UNUSED)
       arg1 = get_stack_entry (esp, 1);
       arg2 = get_stack_entry (esp, 2);
       arg3 = get_stack_entry (esp, 3);
-      f->eax = (uint32_t) _write ((int)arg1, (const void *)arg2, (unsigned)arg3);
+      f->eax = (uint32_t) _write ((int)arg1, (const void *)arg2,
+                                  (unsigned)arg3);
       break;
     case SYS_SEEK:
       arg1 = get_stack_entry (esp, 1);
