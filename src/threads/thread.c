@@ -188,6 +188,7 @@ thread_create (const char *name, int priority,
   t->exit_status->exit_value = -1;
   sema_init(&t->exit_status->wait_on_exit, 0);
   t->exit_status->pid = tid;
+  t->exit_status->thread = t;
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -545,6 +546,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->exit_status = NULL;
   t->file_table_size = 0;
   t->exec_file = NULL;  
+  t->exit_value = -1;
+  t->is_user = false;
  
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

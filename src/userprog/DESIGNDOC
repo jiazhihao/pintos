@@ -94,6 +94,52 @@ OS.
 >> B3: Describe your code for reading and writing user data from the
 >> kernel.
 
+Kernel reads or write user data through pointers passed to system calls.
+Before referencing any user provided pointers in system calls, the kernel 
+checks whether the pointer is valid. Once the kernel makes sure the pointer
+is valid, the pointer can be dereferenced to read or write user data.
+
+A user provided pointer can be invalid in three ways: 
+(a) a null pointer
+(b) a pointer to kernel virtual address
+(c) a pointer to unmapped virutal memory
+
+A user provided pointer can be categorized into two types - buffer and string -
+and in both cases kernel will check the invalidation cases mentioned above.
+Yet the way for the (b) and (c) checking is different for buffer and string, 
+which will be described in details as below.
+
+(1) Buffer
+A buffer pointer is the beginning address of a buffer with explict size, which 
+is used as arguments in write and read system calls. The kernel first check 
+whether the pointer is null and then check whether buffer and buffer+size are 
+both within the user virtual address space. At last, the kernel makes sure each
+page involved between buffer to buffer+size is "valid" by calling lookup_page
+to get page table entry for the page. For read syscall, "valid" means the 
+corresponding page entry is non-empty, present and of user mode. For write 
+syscall, "valid" means the page entry is non-empty, present, of user mode and
+writable. If any page within the buffer range is invalid, the buffer pointer
+is invalid and the kernel should call _exit(-1) to terminate the process.
+
+(2) String
+A string pointer is a const char * without a explict size given. It could be 
+a pointer to file name or arguments, which are used in argument passing, 
+exec, create, remove and open syscalls. A string is limited to PGSIZE (4KB) 
+in our implementation. To check if a string pointer is valid, the kernel
+first check if the pointer is null and whether it is in user virtual address
+space. Since the kernel has no idea if the string spans two pages, it first 
+checks whether the page the string beginning address at is valid. If it is 
+not, the pointer is surely invalid. Otherwise, it could either be that the 
+string's end address is within the same page as its beginning and it's valid
+or the string spans two pages. Thus the kernel then checks whether the next 
+page is valid. If it is not, then the string has to be in the first page with
+maximum length of pg_round_up(string) - string. If the next page is also
+valid, the maximum length is PGSIZE. Lastly, the kernel checks whether there 
+is '\0' within the maximum length inferred above. If there is then the string
+is valid, otherwise invalid (either too long or reaches invalid address). 
+In any case of string invalidation, the kernel terminates the process by 
+calling _exit(-1).
+
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
 >> and the greatest possible number of inspections of the page table
@@ -103,6 +149,21 @@ OS.
 
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
+
+wait system call directly calls process_wait. Notice that every thread 
+maintains a child_list whose elements are struct exit_status. In 
+process_wait, the parent thread iterate its child_list to search for 
+a child with the argument pid. If no such pid is found, just return -1.
+Otherwise, wait the child to exit by calling sema_down of the child's
+exit_status struct's semaphore.
+
+When the child exits, in process_exit, the thread calls sema_up of its
+exit_status struct's semaphore, which notifies the parent that it has exited.
+Since exit_status is only freed when parent exits, the semaphore value will
+be kept even when the parent wait after the child exits.
+
+After the parent recovers from sema_down (the child has exited), it removes
+the child from the child_list and releases the child's exit_status.
 
 >> B6: Any access to user program memory at a user-specified address
 >> can fail due to a bad pointer value.  Such accesses must cause the
@@ -117,6 +178,37 @@ OS.
 >> allocated resources (locks, buffers, etc.) are freed?  In a few
 >> paragraphs, describe the strategy or strategies you adopted for
 >> managing these issues.  Give an example.
+
+Our implementation verifies the validity of a user provided pointer before
+dereference it.  
+
+(1) To avoid obscuring the primary function of error-handling
+We designed two utility functions to check whether a user provided string or
+user provided buffer is valid. Whenever before the kernel is going to 
+dereference a user pointer, the utility function is called to verify it. 
+If the pointer turns out to be invalid, just call _exit(-1). Therefore, the 
+primary part of system calls is unchanged except a validation check at the
+beginning.
+
+(2) To ensure that all temporarily allocated resources are freed
+Firstly, we only use locks after the user pointers are verified, thus no lock
+needs to be released when an invalid memory error is detected. Secondly, the 
+error is handled by calling _exit(-1) which is guranteed to call process_exit.
+In process_exit, all buffers of chidren exit status and file tables are freed,
+all opened files are closed. Even if the process is killed by the kernel in an
+exception, the process_exit is called, thus all resources are freed.
+
+Example of invoking a write system call:
+At first, in system_handler, the address for system call number is verified. 
+Then we know the function to call is write. Then addresses for the write 
+arguments (fd, buffer and size) are all verified before we call the real 
+system call function _write. In _write, before accessing the user data, the 
+kernel calls check_user_memory to verify the address range of buffer to
+buffer + size. Whatever the above verification fails, the kernel calls the 
+exit system call with -1 as arguemnts. Then in process_exit, all resources
+of current process will be released and file_allow_write is called on this
+process' executable file.
+
 
 ---- SYNCHRONIZATION ----
 
@@ -173,6 +265,12 @@ allocate and free 'exit_status' structures for children.
 
 >> B9: Why did you choose to implement access to user memory from the
 >> kernel in the way that you did?
+
+We verify the user memory before dereference it. This strategy is 
+straightforward and proved to be robust since it gurantees that all pointers
+are valid when kernel dereference them. If the pointer is invalid, 
+the kernel just calls the _exit(-1) and nothing has been done, which makes
+resources releasing simple and robust.
 
 >> B10: What advantages or disadvantages can you see to your design
 >> for file descriptors?
