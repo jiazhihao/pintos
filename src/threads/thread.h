@@ -97,8 +97,8 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-    struct file **file_table;           /* file table. */
-    int file_table_size;                /* page number of the file table. */
+    struct file **file_table;           /* File table of current thread. */
+    int file_table_size;                /* The size of the file table. */
     struct file *exec_file;             /* Assoc. exec file of the process. */
     int exit_value;                     /* Exit value of the process. */
     bool is_user;                       /* Flag to identify whether the 
