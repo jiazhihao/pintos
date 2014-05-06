@@ -63,19 +63,23 @@ New struct in 'thread.h':
     struct semaphore wait_on_exit;    /* Synchronization between parent's 
                                          wait and child's exit. */
     struct list_elem elem;            /* List elem for thread's child_list. */
+    struct thread *thread;                /* Pointer to the owning thread. */
   };
 
 New members in struct thread:
+  struct file **file_table;           /* File table of current thread. */
+  int file_table_size;                /* The size of the file table. */
+  struct file *exec_file;             /* Associate exec file of the process. */
+  int exit_value;                     /* Exit value of the process. */
+  bool is_user;                       /* Flag to identify whether the thread is user process. */
   struct exit_status *exit_status;    /* Pointer to owning thread's exit
                                          status. */
   struct list child_list;             /* List for all children thread. */
   struct lock child_list_lock;        /* Lock for child_list. */
-  struct file **file_table;           /* File table of current thread. */
-  int file_table_size;                /* The size of the file table. */
-  struct file *exec_file;             /* Associate exec file of the process. */
+  
 
--- filesys.h --
-New memnbers in 'filesys.H':
+-- filesys.c --
+New memnbers in 'filesys.c':
   struct lock filesys_lock;           /* Lock for entire pintos file system. */
 
 >> B2: Describe how file descriptors are associated with open files.
