@@ -121,7 +121,8 @@ kernel, just do it in shell. It is more flexible.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
- -- process.h --
+-- process.h --
+New struct in 'process.h'
 struct start_status
 {
   bool success;
@@ -129,14 +130,92 @@ struct start_status
   char *cmd_line;
 };
 
+-- thread.h --
+New struct in 'thread.h':
+  /* structure to save exit status of the owning thread*/
+  struct exit_status
+  {
+    int pid;                          /* Thread Process id. */
+    int exit_value;                   /* Return value of the owning thread. */
+    struct semaphore wait_on_exit;    /* Synchronization between parent's 
+                                         wait and child's exit. */
+    struct list_elem elem;            /* List elem for thread's child_list. */
+  };
+
+New members in struct thread:
+  struct exit_status *exit_status;    /* Pointer to owning thread's exit
+                                         status. */
+  struct list child_list;             /* List for all children thread. */
+  struct lock child_list_lock;        /* Lock for child_list. */
+  struct file **file_table;           /* File table of current thread. */
+  int file_table_size;                /* The size of the file table. */
+  struct file *exec_file;             /* Associate exec file of the process. */
+
+-- filesys.h --
+New memnbers in 'filesys.H':
+  struct lock filesys_lock;           /* Lock for entire pintos file system. */
+
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a
 >> single process?
+
+We use a scalable lookup table to implement file descriptor mamanger. Every
+process has its own file table, therefore different processes can use the same
+file descriptors, associated with same or different files. As a result, file
+descriptors is unique just within a single process, but not within the entire
+OS.
+
 
 ---- ALGORITHMS ----
 
 >> B3: Describe your code for reading and writing user data from the
 >> kernel.
+
+Kernel reads or write user data through pointers passed to system calls.
+Before referencing any user provided pointers in system calls, the kernel 
+checks whether the pointer is valid. Once the kernel makes sure the pointer
+is valid, the pointer can be dereferenced to read or write user data.
+
+A user provided pointer can be invalid in three ways: 
+(a) a null pointer
+(b) a pointer to kernel virtual address
+(c) a pointer to unmapped virutal memory
+
+A user provided pointer can be categorized into two types - buffer and string -
+and in both cases kernel will check the invalidation cases mentioned above.
+Yet the way for the (b) and (c) checking is different for buffer and string, 
+which will be described in details as below.
+
+(1) Buffer
+A buffer pointer is the beginning address of a buffer with explict size, which 
+is used as arguments in write and read system calls. The kernel first check 
+whether the pointer is null and then check whether buffer and buffer+size are 
+both within the user virtual address space. At last, the kernel makes sure each
+page involved between buffer to buffer+size is "valid" by calling lookup_page
+to get page table entry for the page. For read syscall, "valid" means the 
+corresponding page entry is non-empty, present and of user mode. For write 
+syscall, "valid" means the page entry is non-empty, present, of user mode and
+writable. If any page within the buffer range is invalid, the buffer pointer
+is invalid and the kernel should call _exit(-1) to terminate the process.
+
+(2) String
+A string pointer is a const char * without a explict size given. It could be 
+a pointer to file name or arguments, which are used in argument passing, 
+exec, create, remove and open syscalls. A string is limited to PGSIZE (4KB) 
+in our implementation. To check if a string pointer is valid, the kernel
+first check if the pointer is null and whether it is in user virtual address
+space. Since the kernel has no idea if the string spans two pages, it first 
+checks whether the page the string beginning address at is valid. If it is 
+not, the pointer is surely invalid. Otherwise, it could either be that the 
+string's end address is within the same page as its beginning and it's valid
+or the string spans two pages. Thus the kernel then checks whether the next 
+page is valid. If it is not, then the string has to be in the first page with
+maximum length of pg_round_up(string) - string. If the next page is also
+valid, the maximum length is PGSIZE. Lastly, the kernel checks whether there 
+is '\0' within the maximum length inferred above. If there is then the string
+is valid, otherwise invalid (either too long or reaches invalid address). 
+In any case of string invalidation, the kernel terminates the process by 
+calling _exit(-1).
 
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
@@ -164,6 +243,21 @@ bytes, we will waste more memory and create more fragmentation.
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
 
+wait system call directly calls process_wait. Notice that every thread 
+maintains a child_list whose elements are struct exit_status. In 
+process_wait, the parent thread iterate its child_list to search for 
+a child with the argument pid. If no such pid is found, just return -1.
+Otherwise, wait the child to exit by calling sema_down of the child's
+exit_status struct's semaphore.
+
+When the child exits, in process_exit, the thread calls sema_up of its
+exit_status struct's semaphore, which notifies the parent that it has exited.
+Since exit_status is only freed when parent exits, the semaphore value will
+be kept even when the parent wait after the child exits.
+
+After the parent recovers from sema_down (the child has exited), it removes
+the child from the child_list and releases the child's exit_status.
+
 >> B6: Any access to user program memory at a user-specified address
 >> can fail due to a bad pointer value.  Such accesses must cause the
 >> process to be terminated.  System calls are fraught with such
@@ -177,6 +271,37 @@ bytes, we will waste more memory and create more fragmentation.
 >> allocated resources (locks, buffers, etc.) are freed?  In a few
 >> paragraphs, describe the strategy or strategies you adopted for
 >> managing these issues.  Give an example.
+
+Our implementation verifies the validity of a user provided pointer before
+dereference it.  
+
+(1) To avoid obscuring the primary function of error-handling
+We designed two utility functions to check whether a user provided string or
+user provided buffer is valid. Whenever before the kernel is going to 
+dereference a user pointer, the utility function is called to verify it. 
+If the pointer turns out to be invalid, just call _exit(-1). Therefore, the 
+primary part of system calls is unchanged except a validation check at the
+beginning.
+
+(2) To ensure that all temporarily allocated resources are freed
+Firstly, we only use locks after the user pointers are verified, thus no lock
+needs to be released when an invalid memory error is detected. Secondly, the 
+error is handled by calling _exit(-1) which is guranteed to call process_exit.
+In process_exit, all buffers of chidren exit status and file tables are freed,
+all opened files are closed. Even if the process is killed by the kernel in an
+exception, the process_exit is called, thus all resources are freed.
+
+Example of invoking a write system call:
+At first, in system_handler, the address for system call number is verified. 
+Then we know the function to call is write. Then addresses for the write 
+arguments (fd, buffer and size) are all verified before we call the real 
+system call function _write. In _write, before accessing the user data, the 
+kernel calls check_user_memory to verify the address range of buffer to
+buffer + size. Whatever the above verification fails, the kernel calls the 
+exit system call with -1 as arguemnts. Then in process_exit, all resources
+of current process will be released and file_allow_write is called on this
+process' executable file.
+
 
 ---- SYNCHRONIZATION ----
 
@@ -213,17 +338,92 @@ can also be passed back.
 >> that all resources are freed in each case?  How about when P
 >> terminates without waiting, before C exits?  After C exits?  Are
 >> there any special cases?
+We introduce a new struct 'exit_status' to guarantee proper
+synchronization between parent process and child process, and avoid
+race conditions. The functionality of each member in struct 
+'exit_status' is illustrated in B1. One thing to notice is that,
+semaphore 'wait_on_exit' is designed for synchronization between P and C.
+To make sure all resources are freed in each case, we only allow parent
+process to create struct 'exit_status' for children, and it is parents'
+responsbility to make sure all resources are freed before exit. Following
+paragraphs explains what happens in each case, respectively.
+
+1. P calls wait(C) before C exits.
+In this case, P invokes 'sema_down' and waits until C's 'wait_on_exit' is set.
+When C is about to exit, it set its 'exit_value', frees its resources, and
+at the very last invokes 'sema_up'.
+
+2. P calls wait(C) after C exits.
+When C first exits, it set its 'exit_value', frees its resources, and invokes
+'sema_up' to set its semaphore 'wait_on_exit'. When P calls wait(C) and
+invokes 'sema_down', it returns immediately and get C's 'exit_value'.
+In both Case 1&2, we avoid race conditions by making sure that 
+C set's its 'exit_value' before invoking 'sema_up', and C's struct 
+'exit_status' will remain valid until P exits.
+
+3. P terminates without waiting, before C exits.
+When P terminates without waiting, P will free all its children's 'exit_status'
+structures. And notify all children P's exit by setting children's 'exit_status'
+pointer to be NULL. When C exits, since C already know exit of P, there is no
+need for C to invokes 'sema_up' (and it's illegal to set 'wait_on_exit'
+semaphore, since P has already freed the corresponding memory).
+
+4. P terminates without waiting, after C exits.
+When C first exits, it set its 'exit_value', frees its resources, and invokes
+'sema_up' to set its semaphore 'wait_on_exit'. When P terminates without
+waiting, P will free all its children's 'exit_status' structures, and directly
+exit without calling 'sema_down' (this is okay as long as we free semaphore
+memory). In both Case 3&4, we avoid memory leakage by only allowing P to
+allocate and free 'exit_status' structures for children.
 
 ---- RATIONALE ----
 
 >> B9: Why did you choose to implement access to user memory from the
 >> kernel in the way that you did?
 
+We verify the user memory before dereference it. This strategy is 
+straightforward and proved to be robust since it gurantees that all pointers
+are valid when kernel dereference them. If the pointer is invalid, 
+the kernel just calls the _exit(-1) and nothing has been done, which makes
+resources releasing simple and robust.
+
 >> B10: What advantages or disadvantages can you see to your design
 >> for file descriptors?
+We use a scalable lookup table to implement file descriptor mamanger. Every
+process has its own file table, therefore different processes can use the same
+file descriptors, associated with same or different files. Entries in file
+table are pointers to file structure that stores information regarding an
+open file. Our file table has several advantages:
+
+1. Given an file descriptor, it takes O(1) time to look up the file table and
+return the corresponding file pointers. File table 'lookup' happens in many
+system calls, such as 'read', 'write', 'filesize', 'seek', 'tell', and close'.
+Optimizing lookup cost is our first priority when design file descriptors.
+The file table consumes a certain amount of continous pages, with each table
+contains a thousand of 32-bit entries. Each entry stores a pointer, which can
+either be NULL (i.e., that entry is free to use) or point to a file structure
+(i.e., the file information of the corresponding file descriptor). The file
+table expolit its memory continuity to minimize lookup cost.
+
+2. Scalability in file table. The size of the file table is adaptable to meet
+scalability requirement. When original file table becomes full, we double file
+table size by allocate new continous pages, that is twice as large as previous,
+and perform a memory copy. This will not rise operation costs, since the
+amortized cost for each operation is as low as before.
+
+3. Memory efficiency in file table. Memory consumption is critical in operating
+system. We introduce the following to mechanism to optimize memory cost of
+file table.
+3.1 We allow reuse of file descriptors. When a file is closed, the operating
+system can reuse closed file's entry to serve new opening file, and can return
+the old file descriptor.
+3.2 The file table size is doubled only if the original file table is full,
+which means at the moment when we create new file table, at least half of its
+entries hold pointers to opening files.
 
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
+We use the defacult identity mapping between tid_t and pid_t for simplicity.
 
 			   SURVEY QUESTIONS
 			   ================

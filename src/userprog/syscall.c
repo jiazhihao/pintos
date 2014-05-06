@@ -1,20 +1,19 @@
-#include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <string.h>
+#include "userprog/syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include "threads/vaddr.h" // is_user_vaddr(), pg_round_down(), PGSIZE
-#include "devices/shutdown.h" // shutdown_power_off()
-#include "threads/pte.h" // PTE_U, PTE_P, PTE_W
-#include "userprog/pagedir.h" // pagedir_check_userpage()
-#include "userprog/process.h" // process_wait()
-#include <string.h>
+#include "threads/vaddr.h"
+#include "devices/shutdown.h"
+#include "threads/pte.h"
+#include "userprog/pagedir.h"
+#include "userprog/process.h"
 #include "filesys/filesys.h"
 #include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "filesys/file.h"
-#include "devices/input.h" // input_getc
-
+#include "devices/input.h"
 
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
@@ -45,7 +44,6 @@ static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
   uint32_t *esp = (uint32_t *) f->esp;
-
   uint32_t syscall_number = get_stack_entry (esp, 0);
   uint32_t arg1, arg2, arg3;
 
@@ -130,6 +128,7 @@ check_user_memory (const void *vaddr, size_t size, bool to_write)
   return true;
 }
 
+/* Get an entry from user process stack. */
 static uint32_t
 get_stack_entry (uint32_t *esp, size_t offset)
 {
@@ -164,6 +163,7 @@ static void
 _exit (int status)
 {
   struct thread* cur = thread_current();
+  cur->exit_value = status;
   if (cur->exit_status != NULL)
     cur->exit_status->exit_value = status;
   thread_exit ();

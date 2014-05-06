@@ -94,11 +94,13 @@ start_process (void *aux)
   success = success && load (file_name, &if_.eip, &if_.esp)
     && argument_passing (cmd_line, &if_.esp);
 
+  struct thread *cur = thread_current();
+  cur->is_user = true;
+
   /* Deny write to executable file.
      keep it open during the process lifetime. */  
   if (success)
   {
-    struct thread *cur = thread_current();
     cur->exec_file = filesys_open (file_name);
     file_deny_write (cur->exec_file);
   }
@@ -168,6 +170,8 @@ process_exit (void)
   {
     e = list_pop_front (&cur->child_list);
     struct exit_status *exit_status = list_entry(e, struct exit_status, elem);
+    /* Set child's exit_status to NULL to notify him of parent's exit. */
+    exit_status->thread->exit_status = NULL;
     free(exit_status);
   }
   lock_release(&cur->child_list_lock);
@@ -204,8 +208,8 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-  if (cur->exit_status != NULL)
-    printf ("%s: exit(%d)\n", cur->name, cur->exit_status->exit_value);
+  if (cur->is_user)
+    printf ("%s: exit(%d)\n", cur->name, cur->exit_value);
   
   /* Notify parent thread regarding the exit of current process .
      Initial thread's exit_status is NULL since it has no parent
