@@ -53,9 +53,41 @@ FirstName LastName <email@domain.example>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+-- thread.h --
+New struct in 'thread.h':
+  /* structure to save exit status of the owning thread*/
+  struct exit_status
+  {
+    int pid;                          /* Thread Process id. */
+    int exit_value;                   /* Return value of the owning thread. */
+    struct semaphore wait_on_exit;    /* Synchronization between parent's 
+                                         wait and child's exit. */
+    struct list_elem elem;            /* List elem for thread's child_list. */
+  };
+
+New members in struct thread:
+  struct exit_status *exit_status;    /* Pointer to owning thread's exit
+                                         status. */
+  struct list child_list;             /* List for all children thread. */
+  struct lock child_list_lock;        /* Lock for child_list. */
+  struct file **file_table;           /* File table of current thread. */
+  int file_table_size;                /* The size of the file table. */
+  struct file *exec_file;             /* Associate exec file of the process. */
+
+-- filesys.h --
+New memnbers in 'filesys.H':
+  struct lock filesys_lock;           /* Lock for entire pintos file system. */
+
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a
 >> single process?
+
+We use a scalable lookup table to implement file descriptor mamanger. Every
+process has its own file table, therefore different processes can use the same
+file descriptors, associated with same or different files. As a result, file
+descriptors is unique just within a single process, but not within the entire
+OS.
+
 
 ---- ALGORITHMS ----
 
@@ -191,6 +223,43 @@ process' executable file.
 >> that all resources are freed in each case?  How about when P
 >> terminates without waiting, before C exits?  After C exits?  Are
 >> there any special cases?
+We introduce a new struct 'exit_status' to guarantee proper
+synchronization between parent process and child process, and avoid
+race conditions. The functionality of each member in struct 
+'exit_status' is illustrated in B1. One thing to notice is that,
+semaphore 'wait_on_exit' is designed for synchronization between P and C.
+To make sure all resources are freed in each case, we only allow parent
+process to create struct 'exit_status' for children, and it is parents'
+responsbility to make sure all resources are freed before exit. Following
+paragraphs explains what happens in each case, respectively.
+
+1. P calls wait(C) before C exits.
+In this case, P invokes 'sema_down' and waits until C's 'wait_on_exit' is set.
+When C is about to exit, it set its 'exit_value', frees its resources, and
+at the very last invokes 'sema_up'.
+
+2. P calls wait(C) after C exits.
+When C first exits, it set its 'exit_value', frees its resources, and invokes
+'sema_up' to set its semaphore 'wait_on_exit'. When P calls wait(C) and
+invokes 'sema_down', it returns immediately and get C's 'exit_value'.
+In both Case 1&2, we avoid race conditions by making sure that 
+C set's its 'exit_value' before invoking 'sema_up', and C's struct 
+'exit_status' will remain valid until P exits.
+
+3. P terminates without waiting, before C exits.
+When P terminates without waiting, P will free all its children's 'exit_status'
+structures. And notify all children P's exit by setting children's 'exit_status'
+pointer to be NULL. When C exits, since C already know exit of P, there is no
+need for C to invokes 'sema_up' (and it's illegal to set 'wait_on_exit'
+semaphore, since P has already freed the corresponding memory).
+
+4. P terminates without waiting, after C exits.
+When C first exits, it set its 'exit_value', frees its resources, and invokes
+'sema_up' to set its semaphore 'wait_on_exit'. When P terminates without
+waiting, P will free all its children's 'exit_status' structures, and directly
+exit without calling 'sema_down' (this is okay as long as we free semaphore
+memory). In both Case 3&4, we avoid memory leakage by only allowing P to
+allocate and free 'exit_status' structures for children.
 
 ---- RATIONALE ----
 
@@ -205,9 +274,41 @@ resources releasing simple and robust.
 
 >> B10: What advantages or disadvantages can you see to your design
 >> for file descriptors?
+We use a scalable lookup table to implement file descriptor mamanger. Every
+process has its own file table, therefore different processes can use the same
+file descriptors, associated with same or different files. Entries in file
+table are pointers to file structure that stores information regarding an
+open file. Our file table has several advantages:
+
+1. Given an file descriptor, it takes O(1) time to look up the file table and
+return the corresponding file pointers. File table 'lookup' happens in many
+system calls, such as 'read', 'write', 'filesize', 'seek', 'tell', and close'.
+Optimizing lookup cost is our first priority when design file descriptors.
+The file table consumes a certain amount of continous pages, with each table
+contains a thousand of 32-bit entries. Each entry stores a pointer, which can
+either be NULL (i.e., that entry is free to use) or point to a file structure
+(i.e., the file information of the corresponding file descriptor). The file
+table expolit its memory continuity to minimize lookup cost.
+
+2. Scalability in file table. The size of the file table is adaptable to meet
+scalability requirement. When original file table becomes full, we double file
+table size by allocate new continous pages, that is twice as large as previous,
+and perform a memory copy. This will not rise operation costs, since the
+amortized cost for each operation is as low as before.
+
+3. Memory efficiency in file table. Memory consumption is critical in operating
+system. We introduce the following to mechanism to optimize memory cost of
+file table.
+3.1 We allow reuse of file descriptors. When a file is closed, the operating
+system can reuse closed file's entry to serve new opening file, and can return
+the old file descriptor.
+3.2 The file table size is doubled only if the original file table is full,
+which means at the moment when we create new file table, at least half of its
+entries hold pointers to opening files.
 
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
+We use the defacult identity mapping between tid_t and pid_t for simplicity.
 
 			   SURVEY QUESTIONS
 			   ================
