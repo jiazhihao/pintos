@@ -422,11 +422,13 @@ thread_add_file (struct thread *t, struct file *file)
     if (fd == t->file_table_size) {
       int ft_page_num = t->file_table_size * sizeof(void *) / PGSIZE * 2;
       struct file ** new_file_table =
-        (struct file **)palloc_get_multiple(PAL_ZERO, ft_page_num);
+        (struct file **) palloc_get_multiple (PAL_ZERO, ft_page_num);
       if (new_file_table == NULL)
         return -1;
-      memcpy(new_file_table, t->file_table, t->file_table_size * sizeof(void *));
-      palloc_free_multiple(t->file_table, t->file_table_size * sizeof(void *) / PGSIZE);
+      memcpy (new_file_table, t->file_table, 
+              t->file_table_size * sizeof(void *));
+      palloc_free_multiple (t->file_table, 
+                           t->file_table_size * sizeof(void *) / PGSIZE);
       t->file_table = new_file_table;
       t->file_table_size = t->file_table_size * 2;
       fd = fd + 1;
