@@ -185,6 +185,8 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
   t->exit_status = (struct exit_status*) malloc (sizeof(struct exit_status));
+  if (t->exit_status == NULL)
+    PANIC ("Failed to allocate memory for struct exit_status.");
   t->exit_status->exit_value = -1;
   sema_init (&t->exit_status->wait_on_exit, 0);
   t->exit_status->pid = tid;

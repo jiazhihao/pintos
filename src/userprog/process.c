@@ -215,9 +215,13 @@ process_exit (void)
 
   /* Notify parent thread regarding the exit of current process .
      Initial thread's exit_status is NULL since it has no parent
-     and it needn't notify anyone of its exit. */
+     and it needn't notify anyone of its exit. 
+     Disable interrup to eliminate condition race. */
+  enum intr_level old_level;
+  old_level = intr_disable ();
   if (cur->exit_status != NULL)
     sema_up (&cur->exit_status->wait_on_exit);
+  intr_set_level (old_level);
 }
 
 /* Sets up the CPU for running user code in the current
