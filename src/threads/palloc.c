@@ -10,6 +10,7 @@
 #include "threads/loader.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "vm/frame.h"
 
 /* Page allocator.  Hands out memory in page-size (or
    page-multiple) chunks.  See malloc.h for an allocator that
@@ -24,18 +25,6 @@
    By default, half of system RAM is given to the kernel pool and
    half to the user pool.  That should be huge overkill for the
    kernel pool, but that's just fine for demonstration purposes. */
-
-/* A memory pool. */
-struct pool
-  {
-    struct lock lock;                   /* Mutual exclusion. */
-    struct bitmap *used_map;            /* Bitmap of free pages. */
-    struct frame_table frame_table;    /* Frame table. */
-    uint8_t *base;                      /* Base of pool. */
-  };
-
-/* Two pools: one for kernel data, one for user pages. */
-struct pool kernel_pool, user_pool;
 
 static void init_pool (struct pool *, void *base, size_t page_cnt,
                        const char *name);
@@ -142,7 +131,8 @@ palloc_free_multiple (void *pages, size_t page_cnt)
   size_t i;
   for (i = page_idx; i < page_idx + page_cnt; i++)
   {
-    pool->frame_table.frames[i].pte = 0;
+    pool->frame_table.frames[i].thread = 0;
+    pool->frame_table.frames[i].vaddr = 0;
   }
   bitmap_set_multiple (pool->used_map, page_idx, page_cnt, false);
 }
@@ -163,16 +153,19 @@ init_pool (struct pool *p, void *base, size_t page_cnt, const char *name)
      Calculate the space needed for the bitmap
      and subtract it from the pool's size. */
   size_t bm_pages = DIV_ROUND_UP (bitmap_buf_size (page_cnt), PGSIZE);
-  if (bm_pages > page_cnt)
+  size_t ft_pages = DIV_ROUND_UP (frame_table_size (page_cnt), PGSIZE);
+  if (bm_pages + ft_pages > page_cnt)
     PANIC ("Not enough memory in %s for bitmap.", name);
-  page_cnt -= bm_pages;
+  page_cnt -= bm_pages + ft_pages;
 
   printf ("%zu pages available in %s.\n", page_cnt, name);
 
   /* Initialize the pool. */
   lock_init (&p->lock);
   p->used_map = bitmap_create_in_buf (page_cnt, base, bm_pages * PGSIZE);
-  p->base = base + bm_pages * PGSIZE;
+  frame_table_init (&p->frame_table, page_cnt, base + bm_pages * PGSIZE,
+                    ft_pages * PGSIZE);
+  p->base = base + bm_pages * PGSIZE + ft_pages * PGSIZE;
 }
 
 /* Returns true if PAGE was allocated from POOL,

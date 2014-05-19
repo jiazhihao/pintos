@@ -19,6 +19,7 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "userprog/syscall.h"
+#include "userprog/pagedir.h"
 
 extern struct lock filesys_lock;
 extern struct pool user_pool;
@@ -574,8 +575,9 @@ install_page (void *upage, void *kpage, bool writable)
   bool ret = pagedir_get_page (t->pagedir, upage) == NULL
              && pagedir_set_page (t->pagedir, upage, kpage, writable);
 
-  size_t page_idx = pg_no (kpage) - pg_no (user_pool->base);
-  user_pool->frames[page_idx].pte = lookup_page (t->pagedir, upage);
+  size_t page_idx = pg_no (kpage) - pg_no (user_pool.base);
+  user_pool.frame_table.frames[page_idx].thread = t;
+  user_pool.frame_table.frames[page_idx].vaddr = upage;
 
   return ret;
 }
