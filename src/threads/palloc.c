@@ -30,11 +30,12 @@ struct pool
   {
     struct lock lock;                   /* Mutual exclusion. */
     struct bitmap *used_map;            /* Bitmap of free pages. */
+    struct frame_table frame_table;    /* Frame table. */
     uint8_t *base;                      /* Base of pool. */
   };
 
 /* Two pools: one for kernel data, one for user pages. */
-static struct pool kernel_pool, user_pool;
+struct pool kernel_pool, user_pool;
 
 static void init_pool (struct pool *, void *base, size_t page_cnt,
                        const char *name);
@@ -138,6 +139,11 @@ palloc_free_multiple (void *pages, size_t page_cnt)
 #endif
 
   ASSERT (bitmap_all (pool->used_map, page_idx, page_cnt));
+  size_t i;
+  for (i = page_idx; i < page_idx + page_cnt; i++)
+  {
+    pool->frame_table.frames[i].pte = 0;
+  }
   bitmap_set_multiple (pool->used_map, page_idx, page_cnt, false);
 }
 

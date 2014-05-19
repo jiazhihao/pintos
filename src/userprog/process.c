@@ -21,6 +21,7 @@
 #include "userprog/syscall.h"
 
 extern struct lock filesys_lock;
+extern struct pool user_pool;
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -570,8 +571,13 @@ install_page (void *upage, void *kpage, bool writable)
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+  bool ret = pagedir_get_page (t->pagedir, upage) == NULL
+             && pagedir_set_page (t->pagedir, upage, kpage, writable);
+
+  size_t page_idx = pg_no (kpage) - pg_no (user_pool->base);
+  user_pool->frames[page_idx].pte = lookup_page (t->pagedir, upage);
+
+  return ret;
 }
 
 /* Get the file name from the command line */
