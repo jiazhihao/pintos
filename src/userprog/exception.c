@@ -162,7 +162,26 @@ page_fault (struct intr_frame *f)
     goto fail;
   }
   struct thread *cur = thread_current ();
+  void *fault_page = pg_round_down(fault_addr);
   uint32_t *pte = lookup_page (cur->pagedir, fault_addr, false);
+
+  // Case 1: Stack Growth
+  void *esp;
+  if (cur->esp == NULL)
+    esp = f->esp;
+  else
+    esp = cur->esp;
+  if ((fault_addr == esp - 4 ||
+       fault_addr == esp - 32 ||
+       fault_addr >= esp)
+    && fault_aaddr >= STACK_BOUNDARY
+	&& (pte == NULL || *pte == 0))
+  {
+    stack_growth(fault_page);
+    return;
+  }
+
+  // Case 2: mmap file or executable file
   if (pte)
   {
     //ASSERT ((*pte & PTE_P) == 0);
