@@ -4,12 +4,19 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "userprog/pagedir.h"
+#include "threads/pte.h"
+#include "filesys/file.h"
+#include <string.h>
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
+static bool load_page_from_file (uint32_t *pte);
+
+extern struct lock filesys_lock;
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -147,10 +154,36 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
-
+  if (user)
+  {
+    goto fail;
+  }
+  struct thread *cur = thread_current ();
+  uint32_t *pte = lookup_page (cur->pagedir, fault_addr, false);
+  if (pte)
+  {
+    ASSERT ((*pte & PTE_P) == 0);
+    if (write && ((*pte & PTE_W) == 0))
+    {
+      goto fail;
+    }
+    if ((*pte & PTE_F) && (*pte & PTE_E))
+    {
+      if (!load_page_from_file (pte))
+      {
+        goto fail;
+      }
+      else
+      {
+        *pte |= PTE_P;
+      }
+    }
+  }
+  return;
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
+fail:
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",
@@ -159,3 +192,36 @@ page_fault (struct intr_frame *f)
   kill (f);
 }
 
+static bool load_page_from_file (uint32_t *pte)
+{
+  ASSERT (*pte & PTE_F);
+  struct thread *cur = thread_current ();
+  uint8_t *kpage = frame_get_page (FRM_USER, pte);
+  if (!kpage)
+  {
+    return false;
+  }
+  ASSERT (pg_ofs (kpage) == 0);
+  lock_acquire (&cur->spt.lock);
+  struct spte *spte = spt_find (&cur->spt, pte);
+  if (spte)
+  {
+    struct file_meta meta = spte->daddr.file_meta;
+    lock_acquire (&filesys_lock);
+    size_t read_bytes = file_read_at (meta.file, kpage, meta.read_bytes, meta.offset);
+    lock_release (&filesys_lock);
+    if (read_bytes == meta.read_bytes)
+    {
+      if (PGSIZE - read_bytes > 0)
+      {
+        memset (kpage + read_bytes, 0, PGSIZE - read_bytes);
+        *pte = vtop (kpage) | (*pte & PTE_FLAGS);
+        lock_release (&cur->spt.lock);
+        return true;
+      }
+    }
+  }
+  lock_release (&cur->spt.lock);
+  frame_free (kpage);
+  return false;
+}
