@@ -29,7 +29,6 @@
 static void init_pool (struct pool *, void *base, size_t page_cnt,
                        const char *name);
 
-static bool page_from_pool (const struct pool *, void *page);
 
 /* Initializes the page allocator.  At most USER_PAGE_LIMIT
    pages are put into the user pool. */
@@ -167,7 +166,7 @@ init_pool (struct pool *p, void *base, size_t page_cnt, const char *name)
 
 /* Returns true if PAGE was allocated from POOL,
    false otherwise. */
-static bool
+bool
 page_from_pool (const struct pool *pool, void *page) 
 {
   size_t page_no = pg_no (page);

@@ -25,7 +25,14 @@ frame_table_size (size_t page_cnt)
 void
 frame_free_multiple (void *pages, size_t page_cnt)
 {
-  // TODO (rqi) assert pages are from user pool
+  void *pg = pages;
+  int i;
+  for (i = 0; i<page_cnt; i++)
+  {
+    ASSERT (page_from_pool (user_pool, pg));
+    pg += PGSIZE;
+  }
+
   palloc_free_multiple (pages, page_cnt);
  
   size_t page_idx = pg_no (pages) - pg_no (user_pool.base);
