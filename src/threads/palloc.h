@@ -21,7 +21,7 @@ struct pool
   {
     struct lock lock;                   /* Mutual exclusion. */
     struct bitmap *used_map;            /* Bitmap of free pages. */
-    struct frame_table frame_table;    /* Frame table. */
+    //struct frame_table frame_table;    /* Frame table. */
     uint8_t *base;                      /* Base of pool. */
   };
 

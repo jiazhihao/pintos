@@ -16,7 +16,7 @@ enum frame_flags
 struct fte
 {
   struct thread *thread;      /* Thread that owns this frame table entry. */
-  void *vaddr;                /* The beginning virtual address that cooresponds
+  uint32_t *pte;                /* The beginning virtual address that cooresponds
                                  to this frame table entry. */
 };
 
@@ -27,9 +27,12 @@ struct frame_table
   struct fte *frames;         /* frames in the table */
 };
 
-void frame_table_init (struct frame_table *ft, size_t page_cnt, void *base,
-                       size_t block_size);
+struct frame_table frame_table;  /* frame table used to check user memory. */
+
+void frame_init (void *base, size_t page_cnt);
 size_t frame_table_size (size_t page_cnt);
-void *frame_get_page (enum frame_flags flags);
+void frame_free_multiple (void *pages, size_t page_cnt);
+void frame_free_page (void *page);
+void *frame_get_page (enum frame_flags flags, uint32_t *pte);
 
 #endif /* vm/frame.h */

@@ -28,6 +28,7 @@
 
 static void init_pool (struct pool *, void *base, size_t page_cnt,
                        const char *name);
+
 static bool page_from_pool (const struct pool *, void *page);
 
 /* Initializes the page allocator.  At most USER_PAGE_LIMIT
@@ -128,12 +129,6 @@ palloc_free_multiple (void *pages, size_t page_cnt)
 #endif
 
   ASSERT (bitmap_all (pool->used_map, page_idx, page_cnt));
-  size_t i;
-  for (i = page_idx; i < page_idx + page_cnt; i++)
-  {
-    pool->frame_table.frames[i].thread = 0;
-    pool->frame_table.frames[i].vaddr = 0;
-  }
   bitmap_set_multiple (pool->used_map, page_idx, page_cnt, false);
 }
 
@@ -152,20 +147,22 @@ init_pool (struct pool *p, void *base, size_t page_cnt, const char *name)
   /* We'll put the pool's used_map at its base.
      Calculate the space needed for the bitmap
      and subtract it from the pool's size. */
+  size_t reserved_pages;
   size_t bm_pages = DIV_ROUND_UP (bitmap_buf_size (page_cnt), PGSIZE);
   size_t ft_pages = DIV_ROUND_UP (frame_table_size (page_cnt), PGSIZE);
-  if (bm_pages + ft_pages > page_cnt)
+  reserved_pages = (p == &user_pool)? bm_pages + ft_pages : bm_pages;
+  if (reserved_pages > page_cnt)
     PANIC ("Not enough memory in %s for bitmap.", name);
-  page_cnt -= bm_pages + ft_pages;
-
+  page_cnt -= reserved_pages;
+  
   printf ("%zu pages available in %s.\n", page_cnt, name);
 
   /* Initialize the pool. */
   lock_init (&p->lock);
   p->used_map = bitmap_create_in_buf (page_cnt, base, bm_pages * PGSIZE);
-  frame_table_init (&p->frame_table, page_cnt, base + bm_pages * PGSIZE,
-                    ft_pages * PGSIZE);
-  p->base = base + bm_pages * PGSIZE + ft_pages * PGSIZE;
+  if (p == &user_pool)
+    frame_init (base + bm_pages * PGSIZE, page_cnt);
+  p->base = base + reserved_pages * PGSIZE;
 }
 
 /* Returns true if PAGE was allocated from POOL,

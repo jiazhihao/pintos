@@ -1,18 +1,18 @@
 #include "vm/frame.h"
 #include "threads/palloc.h"
+#include <stdio.h>
+#include "userprog/pagedir.h"
 
 void 
-frame_table_init (struct frame_table *ft, size_t page_cnt, void *base,
-                  size_t block_size)
+frame_init (void *base, size_t page_cnt)
 {
-  ASSERT(block_size >= frame_table_size (page_cnt));
-  ft->size = page_cnt;
-  ft->frames = (struct fte *) base;
+  frame_table.size = page_cnt;
+  frame_table.frames = (struct fte *) base;
   size_t i;
   for (i = 0; i < page_cnt; i ++)
   {
-    ft->frames[i].thread = NULL;
-    ft->frames[i].vaddr = NULL;
+    frame_table.frames[i].thread = NULL;
+    frame_table.frames[i].pte = NULL;
   }
 }
 
@@ -22,12 +22,35 @@ frame_table_size (size_t page_cnt)
   return page_cnt * sizeof (struct fte);
 }
 
+void
+frame_free_multiple (void *pages, size_t page_cnt)
+{
+  // TODO (rqi) assert pages are from user pool
+  palloc_free_multiple (pages, page_cnt);
+ 
+  size_t page_idx = pg_no (pages) - pg_no (user_pool.base);
+  size_t i;
+  for (i = page_idx; i < page_idx + page_cnt; i++)
+  {
+    frame_table.frames[i].thread = NULL;
+    frame_table.frames[i].pte = NULL;
+  }
+}
+
+void
+frame_free_page (void *page)
+{
+  frame_free_multiple (page,1);
+}
+
 /* Allocate one page for user and set spt accordingly.
    If no physical page is available, run eviction algo. to get a page. */
 void *
-frame_get_page (enum frame_flags flags)
+frame_get_page (enum frame_flags flags, uint32_t *pte)
 {
   ASSERT (flags & FRM_USER);
+  ASSERT (pte != NULL);
+
   void *kpage = palloc_get_multiple (flags, 1);
   if (kpage == NULL)
   {
@@ -35,6 +58,11 @@ frame_get_page (enum frame_flags flags)
     // TODO(rqi), call eviction algo. if run out of phy. pages.
     //kpage = evict_and_get_page (...);
   }
-  // TODO(rqi), move all frame-related operations into frame.c
+
+  struct thread *t = thread_current ();
+  size_t page_idx = pg_no (kpage) - pg_no (user_pool.base);
+  frame_table.frames[page_idx].thread = t;
+  frame_table.frames[page_idx].pte = pte;
+
   return kpage;
 }
