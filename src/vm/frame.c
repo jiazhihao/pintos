@@ -50,7 +50,6 @@ frame_get_page (enum frame_flags flags, uint32_t *pte)
 {
   ASSERT (flags & FRM_USER);
   ASSERT (pte != NULL);
-  //ASSERT (upage < PHYS_BASE);
 
   void *kpage = palloc_get_multiple (flags, 1);
   if (kpage == NULL)
@@ -59,7 +58,6 @@ frame_get_page (enum frame_flags flags, uint32_t *pte)
     // TODO(rqi), call eviction algo. if run out of phy. pages.
     //kpage = evict_and_get_page (...);
   }
-  // TODO(rqi), move all frame-related operations into frame.c
 
   struct thread *t = thread_current ();
   size_t page_idx = pg_no (kpage) - pg_no (user_pool.base);
