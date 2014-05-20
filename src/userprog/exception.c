@@ -215,16 +215,16 @@ static bool load_page_from_file (uint32_t *pte)
   {
     struct file_meta meta = spte->daddr.file_meta;
     //TODO may need a file sys lock
-    //if (!lock_held_by_current_thread (lock))
-    //{
-    //  lock_acquire (&filesys_lock);
-    //  flag = 1;
-    //}
+    if (!lock_held_by_current_thread (&filesys_lock))
+    {
+      lock_acquire (&filesys_lock);
+      flag = 1;
+    }
     size_t read_bytes = file_read_at (meta.file, kpage, meta.read_bytes, meta.offset);
-    //if (flag)
-    //{
-    //  lock_release (&filesys_lock);
-    //}
+    if (flag)
+    {
+      lock_release (&filesys_lock);
+    }
     if (read_bytes == meta.read_bytes)
     {
       if (PGSIZE - read_bytes > 0)
