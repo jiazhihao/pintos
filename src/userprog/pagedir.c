@@ -5,6 +5,7 @@
 #include "threads/init.h"
 #include "threads/pte.h"
 #include "threads/palloc.h"
+#include "vm/frame.h"
 
 static uint32_t *active_pd (void);
 static void invalidate_pagedir (uint32_t *);
@@ -41,7 +42,7 @@ pagedir_destroy (uint32_t *pd)
         
         for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
           if (*pte & PTE_P) 
-            palloc_free_page (pte_get_page (*pte));
+            frame_free_page (pte_get_page (*pte));
         palloc_free_page (pt);
       }
   palloc_free_page (pd);
@@ -86,12 +87,13 @@ lookup_page (uint32_t *pd, const void *vaddr, bool create)
 }
 
 /* Check whether a user page is valid. return true if it is and false ow. */
+
 bool
 pagedir_check_userpage (uint32_t *pd, void *upage, bool to_write)
 {
   uint32_t *pte = lookup_page (pd, upage, false);
   /* present + user mode */
-  if (pte == NULL || !(*pte & PTE_P) || !(*pte & PTE_U))
+  if (pte == NULL || !(*pte & PTE_U) || !(*pte))
     return false;
   /* writable address */
   if (to_write && !(*pte & PTE_W))

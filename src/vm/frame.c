@@ -25,16 +25,24 @@ frame_table_size (size_t page_cnt)
 void
 frame_free_multiple (void *pages, size_t page_cnt)
 {
-  // TODO (rqi) assert pages are from user pool
-  palloc_free_multiple (pages, page_cnt);
- 
+  void *pg = pages;
+  int i;
+  for (i = 0; i<page_cnt; i++)
+  {
+    ASSERT (page_from_pool (&user_pool, pg));
+    pg += PGSIZE;
+  }
+  
+  /* Reset frame table before resetting bitmap. */
   size_t page_idx = pg_no (pages) - pg_no (user_pool.base);
-  size_t i;
   for (i = page_idx; i < page_idx + page_cnt; i++)
   {
     frame_table.frames[i].thread = NULL;
     frame_table.frames[i].pte = NULL;
   }
+
+  palloc_free_multiple (pages, page_cnt);
+ 
 }
 
 void

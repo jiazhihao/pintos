@@ -552,7 +552,7 @@ setup_stack (void **esp)
   bool success = false;
   
   void *upage = ((uint8_t *)PHYS_BASE) - PGSIZE;
-  //kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  
   struct thread *t = thread_current();
   uint32_t *pte = lookup_page (t->pagedir, upage, true);
   kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
