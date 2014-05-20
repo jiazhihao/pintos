@@ -15,6 +15,7 @@ enum palloc_flags
     PAL_USER = 004              /* User page. */
   };
 
+
 /* A memory pool. */
 struct pool
   {
