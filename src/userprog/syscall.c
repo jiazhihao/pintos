@@ -114,7 +114,7 @@ syscall_handler (struct intr_frame *f UNUSED)
   }
 
   ASSERT(cur->esp != NULL);
-  t->esp = NULL;
+  cur->esp = NULL;
 }
 
 /* Check whether a range of user viritual memory is valid. */

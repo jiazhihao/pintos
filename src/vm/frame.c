@@ -26,7 +26,7 @@ void
 frame_free_multiple (void *pages, size_t page_cnt)
 {
   void *pg = pages;
-  int i;
+  size_t i;
   for (i = 0; i<page_cnt; i++)
   {
     ASSERT (page_from_pool (&user_pool, pg));

@@ -174,7 +174,7 @@ page_fault (struct intr_frame *f)
   if ((fault_addr == esp - 4 ||
        fault_addr == esp - 32 ||
        fault_addr >= esp)
-    && fault_aaddr >= STACK_BOUNDARY
+    && fault_addr >= STACK_BOUNDARY
 	&& (pte == NULL || *pte == 0))
   {
     stack_growth(fault_page);
