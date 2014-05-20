@@ -7,6 +7,7 @@
 #include "userprog/pagedir.h"
 #include "threads/pte.h"
 #include "filesys/file.h"
+#include "vm/frame.h"
 #include <string.h>
 
 /* Number of page faults processed. */
@@ -154,7 +155,7 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
-  if (user)
+  if (!user || !not_present)
   {
     goto fail;
   }
@@ -162,11 +163,11 @@ page_fault (struct intr_frame *f)
   uint32_t *pte = lookup_page (cur->pagedir, fault_addr, false);
   if (pte)
   {
-    ASSERT ((*pte & PTE_P) == 0);
-    if (write && ((*pte & PTE_W) == 0))
-    {
-      goto fail;
-    }
+    //ASSERT ((*pte & PTE_P) == 0);
+    //if (write && ((*pte & PTE_W) == 0))
+    //{
+    //  goto fail;
+    //}
     if ((*pte & PTE_F) && (*pte & PTE_E))
     {
       if (!load_page_from_file (pte))
@@ -215,13 +216,13 @@ static bool load_page_from_file (uint32_t *pte)
       if (PGSIZE - read_bytes > 0)
       {
         memset (kpage + read_bytes, 0, PGSIZE - read_bytes);
-        *pte = vtop (kpage) | (*pte & PTE_FLAGS);
-        lock_release (&cur->spt.lock);
-        return true;
       }
+      *pte = vtop (kpage) | (*pte & PTE_FLAGS);
+      lock_release (&cur->spt.lock);
+      return true;
     }
   }
   lock_release (&cur->spt.lock);
-  frame_free (kpage);
+  frame_free_page (kpage);
   return false;
 }
