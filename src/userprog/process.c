@@ -511,7 +511,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
     /* Get a page of memory. */
     //uint8_t *kpage = palloc_get_page (PAL_USER);
-    uint8_t *kpage = frame_get_page (FRM_USER);
+    uint8_t *kpage = frame_get_page (FRM_USER, upage);
     if (kpage == NULL)
       return false;
 
@@ -545,12 +545,13 @@ setup_stack (void **esp)
 {
   uint8_t *kpage;
   bool success = false;
-
+  
+  void *upage = ((uint8_t *)PHYS_BASE) - PGSIZE;
   //kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  kpage = frame_get_page (FRM_USER | FRM_ZERO);
+  kpage = frame_get_page (FRM_USER | FRM_ZERO, upage);
   if (kpage != NULL)
   {
-    success = install_page (((uint8_t *)PHYS_BASE) - PGSIZE, kpage, true);
+    success = install_page (upage, kpage, true);
     if (success)
       *esp = PHYS_BASE;
     else
@@ -571,18 +572,12 @@ setup_stack (void **esp)
 static bool
 install_page (void *upage, void *kpage, bool writable)
 {
-  struct thread *t = thread_current ();
+  struct thread *t = thread_current();
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  bool ret = pagedir_get_page (t->pagedir, upage) == NULL
+  return pagedir_get_page (t->pagedir, upage) == NULL
              && pagedir_set_page (t->pagedir, upage, kpage, writable);
-
-  size_t page_idx = pg_no (kpage) - pg_no (user_pool.base);
-  user_pool.frame_table.frames[page_idx].thread = t;
-  user_pool.frame_table.frames[page_idx].vaddr = upage;
-
-  return ret;
 }
 
 /* Get the file name from the command line */
