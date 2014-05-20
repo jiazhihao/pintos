@@ -558,6 +558,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->exec_file = NULL;
   t->exit_value = -1;
   t->is_user = false;
+  t->esp = NULL;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

@@ -47,6 +47,10 @@ syscall_handler (struct intr_frame *f UNUSED)
   uint32_t syscall_number = get_stack_entry (esp, 0);
   uint32_t arg1, arg2, arg3;
 
+  struct thread *cur = thread_current ();
+  ASSERT(cur->esp == NULL);
+  cur->esp = f->esp;
+
   switch (syscall_number)
   {
   case SYS_HALT:
@@ -108,6 +112,9 @@ syscall_handler (struct intr_frame *f UNUSED)
     _close ((int)arg1);
     break;
   }
+
+  ASSERT(cur->esp != NULL);
+  t->esp = NULL;
 }
 
 /* Check whether a range of user viritual memory is valid. */

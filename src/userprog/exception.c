@@ -16,6 +16,7 @@ static long long page_fault_cnt;
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
 static bool load_page_from_file (uint32_t *pte);
+static bool stack_growth (void *upage);
 
 extern struct lock filesys_lock;
 
@@ -193,7 +194,8 @@ fail:
   kill (f);
 }
 
-static bool load_page_from_file (uint32_t *pte)
+static bool
+load_page_from_file (uint32_t *pte)
 {
   ASSERT (*pte & PTE_F);
   struct thread *cur = thread_current ();
@@ -225,4 +227,16 @@ static bool load_page_from_file (uint32_t *pte)
   lock_release (&cur->spt.lock);
   frame_free_page (kpage);
   return false;
+}
+
+static bool
+stack_growth (void *upage)
+{
+  uint32_t *pte = lookup_page (thread_current()->pagedir, upage, true);
+  void *kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
+  if (kpage == NULL)
+    return false;
+  //TODO(zhihao): add new function to handle *pte flag setting
+  *pte = vtop (kpage) | PTE_U | PTE_P | PTE_W;
+  return true;
 }
