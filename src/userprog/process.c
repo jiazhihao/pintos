@@ -22,6 +22,7 @@
 #include "userprog/pagedir.h"
 #include "vm/page.h"
 #include "threads/pte.h"
+#include "vm/frame.h"
 
 extern struct lock filesys_lock;
 extern struct pool user_pool;
@@ -550,7 +551,8 @@ setup_stack (void **esp)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  //kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  kpage = frame_get_page (FRM_USER | FRM_ZERO);
   if (kpage != NULL)
   {
     success = install_page (((uint8_t *)PHYS_BASE) - PGSIZE, kpage, true);
