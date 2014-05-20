@@ -165,7 +165,7 @@ page_fault (struct intr_frame *f)
   void *fault_page = pg_round_down(fault_addr);
   uint32_t *pte = lookup_page (cur->pagedir, fault_addr, false);
 
-  // Case 1: Stack Growth
+  /* Case 1: Stack Growth */
   void *esp;
   if (cur->esp == NULL)
     esp = f->esp;
@@ -181,31 +181,19 @@ page_fault (struct intr_frame *f)
     return;
   }
 
-  // Case 2: mmap file or executable file
-  if (pte)
+  /* Case 2: executable file */
+  if (pte && (*pte & PTE_F) && (*pte & PTE_E))
   {
-    //ASSERT ((*pte & PTE_P) == 0);
-    //if (write && ((*pte & PTE_W) == 0))
-    //{
-    //  goto fail;
-    //}
-    if ((*pte & PTE_F) && (*pte & PTE_E))
+    if (!load_page_from_file (pte))
     {
-      if (!load_page_from_file (pte))
-      {
-        goto fail;
-      }
-      else
-      {
-        *pte |= PTE_P;
-      }
+      goto fail;
+    }
+    else
+    {
+      *pte |= PTE_P;
+      return;
     }
   }
-  else 
-  {
-    goto fail;
-  } 
-  return;
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
