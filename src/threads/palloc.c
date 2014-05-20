@@ -129,12 +129,6 @@ palloc_free_multiple (void *pages, size_t page_cnt)
 #endif
 
   ASSERT (bitmap_all (pool->used_map, page_idx, page_cnt));
-  //size_t i;
-  //for (i = page_idx; i < page_idx + page_cnt; i++)
-  //{
-  //  pool->frame_table.frames[i].thread = 0;
-  //  pool->frame_table.frames[i].vaddr = 0;
-  //}
   bitmap_set_multiple (pool->used_map, page_idx, page_cnt, false);
 }
 
@@ -166,7 +160,7 @@ init_pool (struct pool *p, void *base, size_t page_cnt, const char *name)
   p->used_map = bitmap_create_in_buf (page_cnt, base, bm_pages * PGSIZE);
   //if (p == &user_pool)
   //{
-    frame_init (p->base + bm_pages * PGSIZE, page_cnt);
+    frame_init (base + bm_pages * PGSIZE, page_cnt);
   //}
   p->base = base + bm_pages * PGSIZE + ft_pages * PGSIZE;
 }

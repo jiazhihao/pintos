@@ -33,6 +33,6 @@ void frame_init (void *base, size_t page_cnt);
 size_t frame_table_size (size_t page_cnt);
 void frame_free_multiple (void *pages, size_t page_cnt);
 void frame_free_page (void *page);
-void *frame_get_page (enum frame_flags flags, void *upage);
+void *frame_get_page (enum frame_flags flags, uint32_t *pte);
 
 #endif /* vm/frame.h */

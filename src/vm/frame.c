@@ -1,11 +1,11 @@
 #include "vm/frame.h"
 #include "threads/palloc.h"
 #include <stdio.h>
+#include "userprog/pagedir.h"
 
 void 
 frame_init (void *base, size_t page_cnt)
 {
-  printf ("frame_init\n");
   frame_table.size = page_cnt;
   frame_table.frames = (struct fte *) base;
   size_t i;
@@ -32,8 +32,8 @@ frame_free_multiple (void *pages, size_t page_cnt)
   size_t i;
   for (i = page_idx; i < page_idx + page_cnt; i++)
   {
-    frame_table.frames[i].thread = 0;
-    frame_table.frames[i].pte = 0;
+    frame_table.frames[i].thread = NULL;
+    frame_table.frames[i].pte = NULL;
   }
 }
 
@@ -46,10 +46,10 @@ frame_free_page (void *page)
 /* Allocate one page for user and set spt accordingly.
    If no physical page is available, run eviction algo. to get a page. */
 void *
-frame_get_page (enum frame_flags flags, void *upage)
+frame_get_page (enum frame_flags flags, uint32_t *pte)
 {
   ASSERT (flags & FRM_USER);
-  ASSERT (pg_ofs (upage) == 0);
+  ASSERT (pte != NULL);
   //ASSERT (upage < PHYS_BASE);
 
   void *kpage = palloc_get_multiple (flags, 1);
@@ -63,10 +63,8 @@ frame_get_page (enum frame_flags flags, void *upage)
 
   struct thread *t = thread_current ();
   size_t page_idx = pg_no (kpage) - pg_no (user_pool.base);
-  printf ("user_pool.base: %u\n", user_pool.base);
-  printf ("page_idx: %u\n", page_idx);
   frame_table.frames[page_idx].thread = t;
-  frame_table.frames[page_idx].pte = lookup_page (t->pagedir, upage, false);
+  frame_table.frames[page_idx].pte = pte;
 
   return kpage;
 }
