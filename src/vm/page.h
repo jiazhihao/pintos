@@ -5,16 +5,17 @@
 #include "threads/synch.h"
 
 
-struct file_addr
+struct file_meta
 {
   struct file *file;
   off_t offset;
+  size_t read_bytes;
 };
 
 union daddr
 {
   size_t swap_addr;
-  struct file_addr file_addr;
+  struct file_meta file_meta;
 };
 
 struct spt
@@ -25,7 +26,7 @@ struct spt
 
 struct spte
 {
-  void *vaddr;
+  uint32_t *pte;
   union daddr daddr;
   struct hash_elem elem;
 };
@@ -35,9 +36,9 @@ void spt_clear (struct spt *spt);
 void spt_destroy (struct spt *spt);
 size_t spt_size (struct spt *spt);
 bool spt_empty (struct spt *spt);
-struct spte *spt_insert (struct spt *spt, void *vaddr, union daddr *daddr);
-struct spte *spt_replace (struct spt *spt, void *vaddr, union daddr *daddr);
-struct spte *spt_find (struct spt *spt, void *vaddr);
-void spt_delete (struct spt *spt, void *vaddr);
+struct spte *spt_insert (struct spt *spt, uint32_t *pte, union daddr *daddr);
+struct spte *spt_replace (struct spt *spt, uint32_t *pte, union daddr *daddr);
+struct spte *spt_find (struct spt *spt, uint32_t *pte);
+void spt_delete (struct spt *spt, uint32_t *pte);
 
 #endif /* vm/page.h */

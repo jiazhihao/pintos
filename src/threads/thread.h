@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/synch.h"
+#include "vm/page.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -103,6 +104,7 @@ struct thread
   int exit_value;                     /* Exit value of the process. */
   bool is_user;                       /* Flag to identify whether the 
                                          thread is user process. */
+  struct spt spt;                     /* Supplemental page table */
 #endif
 
   struct exit_status *exit_status;    /* Pointer to owning thread's

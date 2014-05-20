@@ -20,6 +20,8 @@
 #include "threads/malloc.h"
 #include "userprog/syscall.h"
 #include "userprog/pagedir.h"
+#include "vm/page.h"
+#include "threads/pte.h"
 #include "vm/frame.h"
 
 extern struct lock filesys_lock;
@@ -328,6 +330,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
+  spt_init (&t->spt);
   if (t->pagedir == NULL)
     goto done;
   process_activate ();
@@ -501,6 +504,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (ofs % PGSIZE == 0);
 
   file_seek (file, ofs);
+  struct thread *cur = thread_current ();
   while (read_bytes > 0 || zero_bytes > 0)
   {
     /* Calculate how to fill this page.
@@ -508,29 +512,29 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
        and zero the final PAGE_ZERO_BYTES bytes. */
     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
-
     /* Get a page of memory. */
-    struct thread *t = thread_current();
-    uint32_t *pte = lookup_page (t->pagedir, upage, true);
-    uint8_t *kpage = frame_get_page (FRM_USER, pte);
-    if (kpage == NULL)
-      return false;
-
-    /* Load this page. */
-    if (file_read (file, kpage, page_read_bytes) != (int)page_read_bytes)
+    uint32_t *pte = lookup_page (cur->pagedir, upage, true);
+    if (!pte)
     {
-      palloc_free_page (kpage);
       return false;
     }
-    memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-    /* Add the page to the process's address space. */
-    if (!install_page (upage, kpage, writable))
+    *pte |= PTE_F | PTE_E | PTE_U;
+    if (writable)
     {
-      palloc_free_page (kpage);
+      *pte |= PTE_W;
+    }
+    union daddr daddr;
+    daddr.file_meta.file = file;
+    daddr.file_meta.offset = ofs;
+    daddr.file_meta.read_bytes = page_read_bytes;
+    lock_acquire (&cur->spt.lock);
+    if (!spt_insert (&cur->spt, pte, &daddr))
+    {
+      lock_release (&cur->spt.lock);
       return false;
     }
-
+    lock_release (&cur->spt.lock);
+    ofs += page_read_bytes;
     /* Advance. */
     read_bytes -= page_read_bytes;
     zero_bytes -= page_zero_bytes;
