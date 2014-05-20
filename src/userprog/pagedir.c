@@ -86,12 +86,13 @@ lookup_page (uint32_t *pd, const void *vaddr, bool create)
 }
 
 /* Check whether a user page is valid. return true if it is and false ow. */
+
 bool
 pagedir_check_userpage (uint32_t *pd, void *upage, bool to_write)
 {
   uint32_t *pte = lookup_page (pd, upage, false);
   /* present + user mode */
-  if (pte == NULL || !(*pte & PTE_P) || !(*pte & PTE_U))
+  if (pte == NULL || !(*pte & PTE_U) || !(*pte))
     return false;
   /* writable address */
   if (to_write && !(*pte & PTE_W))

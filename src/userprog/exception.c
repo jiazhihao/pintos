@@ -9,6 +9,7 @@
 #include "filesys/file.h"
 #include "vm/frame.h"
 #include <string.h>
+#include "threads/vaddr.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -155,7 +156,7 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
-  if (!user || !not_present)
+  if (!not_present || !is_user_vaddr (fault_addr))
   {
     goto fail;
   }
@@ -195,6 +196,7 @@ fail:
 
 static bool load_page_from_file (uint32_t *pte)
 {
+  bool flag = 0;
   ASSERT (*pte & PTE_F);
   struct thread *cur = thread_current ();
   uint8_t *kpage = frame_get_page (FRM_USER, pte);
@@ -208,9 +210,17 @@ static bool load_page_from_file (uint32_t *pte)
   if (spte)
   {
     struct file_meta meta = spte->daddr.file_meta;
-    lock_acquire (&filesys_lock);
+    //TODO may need a file sys lock
+    //if (!lock_held_by_current_thread (lock))
+    //{
+    //  lock_acquire (&filesys_lock);
+    //  flag = 1;
+    //}
     size_t read_bytes = file_read_at (meta.file, kpage, meta.read_bytes, meta.offset);
-    lock_release (&filesys_lock);
+    //if (flag)
+    //{
+    //  lock_release (&filesys_lock);
+    //}
     if (read_bytes == meta.read_bytes)
     {
       if (PGSIZE - read_bytes > 0)
