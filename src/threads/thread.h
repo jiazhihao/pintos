@@ -105,6 +105,8 @@ struct thread
   bool is_user;                       /* Flag to identify whether the 
                                          thread is user process. */
   struct spt spt;                     /* Supplemental page table */
+  void *esp;                          /* User esp value at the initial
+                                         transition from user to kernel*/
 #endif
 
   struct exit_status *exit_status;    /* Pointer to owning thread's

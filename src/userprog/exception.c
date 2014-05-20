@@ -17,6 +17,7 @@ static long long page_fault_cnt;
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
 static bool load_page_from_file (uint32_t *pte);
+static bool stack_growth (void *upage);
 
 extern struct lock filesys_lock;
 
@@ -161,7 +162,26 @@ page_fault (struct intr_frame *f)
     goto fail;
   }
   struct thread *cur = thread_current ();
+  void *fault_page = pg_round_down(fault_addr);
   uint32_t *pte = lookup_page (cur->pagedir, fault_addr, false);
+
+  // Case 1: Stack Growth
+  void *esp;
+  if (cur->esp == NULL)
+    esp = f->esp;
+  else
+    esp = cur->esp;
+  if ((fault_addr == esp - 4 ||
+       fault_addr == esp - 32 ||
+       fault_addr >= esp)
+    && fault_addr >= STACK_BOUNDARY
+	&& (pte == NULL || *pte == 0))
+  {
+    stack_growth(fault_page);
+    return;
+  }
+
+  // Case 2: mmap file or executable file
   if (pte)
   {
     //ASSERT ((*pte & PTE_P) == 0);
@@ -198,7 +218,8 @@ fail:
   kill (f);
 }
 
-static bool load_page_from_file (uint32_t *pte)
+static bool
+load_page_from_file (uint32_t *pte)
 {
   bool flag = 0;
   ASSERT (*pte & PTE_F);
@@ -239,4 +260,16 @@ static bool load_page_from_file (uint32_t *pte)
   lock_release (&cur->spt.lock);
   frame_free_page (kpage);
   return false;
+}
+
+static bool
+stack_growth (void *upage)
+{
+  uint32_t *pte = lookup_page (thread_current()->pagedir, upage, true);
+  void *kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
+  if (kpage == NULL)
+    return false;
+  //TODO(zhihao): add new function to handle *pte flag setting
+  *pte = vtop (kpage) | PTE_U | PTE_P | PTE_W;
+  return true;
 }
