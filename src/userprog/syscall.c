@@ -34,12 +34,9 @@ static uint32_t _tell (int fd);
 static mapid_t _mmap (int fd, void *addr);
 static mapid_t mt_add (struct thread *t, struct mte* mte);
 static void mt_rm (struct thread *t, mapid_t mapid);
-static bool mte_empty (struct mte *mte);
-static struct mte *mt_get (struct thread *t, mapid_t mapid);
 static bool load_page_from_file (uint32_t *);
 static bool load_page_from_swap (uint32_t *);
 static bool stack_growth (void *);
-static void _munmap (mapid_t mapping);
 
 
 extern struct lock filesys_lock;
@@ -405,7 +402,7 @@ static mapid_t _mmap (int fd, void *addr)
   return mapid;
 }
 
-static void _munmap (mapid_t mapping)
+void _munmap (mapid_t mapping)
 {
   struct thread *cur = thread_current ();
   struct mte *mte = mt_get (cur, mapping);
@@ -440,13 +437,17 @@ static void _munmap (mapid_t mapping)
         {
           if (*pte & PTE_P)
           {
+            void *kpage = pte_get_page (*pte);
             lock_acquire (&filesys_lock);
-            file_write_at (file, pte_get_page (*pte), write_bytes, offset);
+            file_write_at (file, kpage, write_bytes, offset);
             lock_release (&filesys_lock);
             *pte = 0;
-            frame_free_page (pte_get_page (*pte));
+            frame_free_page (kpage);
           }
-          *pte = 0;
+          else
+          {
+            *pte = 0;
+          }
         }
         size -= write_bytes;
         offset += write_bytes;
@@ -519,12 +520,12 @@ static void mt_rm (struct thread *t, mapid_t mapid)
   }
 }
 
-static bool mte_empty (struct mte *mte)
+bool mte_empty (struct mte *mte)
 {
   return mte->vaddr == NULL && mte->size == 0;
 }
 
-static struct mte *mt_get (struct thread *t, mapid_t mapid)
+struct mte *mt_get (struct thread *t, mapid_t mapid)
 {
   if (mapid >= 0 && mapid < t->mt_size)
     return &(t->mt[mapid]);

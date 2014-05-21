@@ -199,6 +199,18 @@ process_exit (void)
   palloc_free_multiple (cur->file_table, cur->file_table_size *
                         sizeof(void *) / PGSIZE);
 
+  /* unmap all the maped file */
+  mapid_t mapid;
+  for (mapid = 0; mapid < cur->mt_size; mapid++)
+  {
+    struct mte *mte = mt_get (cur, mapid);
+    if (mte && !mte_empty(mte))
+    {
+      _munmap (mapid);
+    }
+  }
+  palloc_free_multiple (cur->mt, cur->mt_size *
+                        sizeof(struct mte) / PGSIZE);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
