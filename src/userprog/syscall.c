@@ -14,6 +14,7 @@
 #include "threads/palloc.h"
 #include "filesys/file.h"
 #include "devices/input.h"
+#include "vm/swap.h"
 
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
@@ -133,9 +134,11 @@ check_user_memory (const void *vaddr, size_t size, bool to_write)
   for (; upage < vaddr + size; upage += PGSIZE)
   {
     if (!pagedir_check_userpage (t->pagedir, upage, to_write))
-      return false;
+    {
+      if (!_page_fault(NULL, upage))
+        return false;
+    }
   }
-
   return true;
 }
 
@@ -351,7 +354,7 @@ _close (int fd)
 /* Return true if we can successfully access the page, false ow.*/
 
 bool
-_page_fault (struct intr_frame *f, void *fault_page)
+_page_fault (void *intr_esp, void *fault_addr)
 {
   if (!is_user_vaddr (fault_addr))
   {
@@ -365,7 +368,7 @@ _page_fault (struct intr_frame *f, void *fault_page)
   /* Case 1: Stack Growth */
   void *esp;
   if (cur->esp == NULL)
-    esp = f->esp;
+    esp = intr_esp;
   else
     esp = cur->esp;
   if ((fault_addr == esp - 4 ||
@@ -402,7 +405,9 @@ _page_fault (struct intr_frame *f, void *fault_page)
     {
       return true;
     }
-  }
+  };
+
+  return false;
 }
 
 static void
