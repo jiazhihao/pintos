@@ -115,7 +115,7 @@ evict_and_get_page (enum frame_flags flags)
     bool is_mmap_page = (*pte & PTE_F) && !(*pte & PTE_E);
     lock_acquire (&fte->thread->spt.lock);
     spte = spt_find (&fte->thread->spt, pte);
-    bool has_swap_page = (spte != NULL) && (spte->daddr.swap_addr != 0);
+    bool has_swap_page = !(*pte & PTE_F) && (spte != NULL);
     /* Case 3: if unaccessed but dirty. */
     if (*pte & PTE_D)
     {
@@ -147,6 +147,8 @@ evict_and_get_page (enum frame_flags flags)
           }
         }
         spte->daddr.swap_addr = swap_page_no;
+        *pte &= ~PTE_F;
+        *pte &= ~PTE_E;
       }
       /* Case 3.3: exec. file or non-file with swap_page */
       if (!is_mmap_page && has_swap_page)
