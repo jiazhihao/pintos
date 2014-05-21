@@ -454,14 +454,13 @@ thread_rm_file (struct thread *t, int fd)
 }
 
 /* Get file from file table. */
-struct file *
-  thread_get_file (struct thread *t, int fd)
+struct file *thread_get_file (struct thread *t, int fd)
 {
-    if (fd > 0 && fd < t->file_table_size)
-      return t->file_table[fd];
-    else
-      return NULL;
-  }
+  if (fd > 0 && fd < t->file_table_size)
+    return t->file_table[fd];
+  else
+    return NULL;
+}
 
 
 /* Idle thread.  Executes when no other thread is ready to run.
