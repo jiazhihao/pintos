@@ -165,7 +165,7 @@ page_fault (struct intr_frame *f)
   void *fault_page = pg_round_down(fault_addr);
   uint32_t *pte = lookup_page (cur->pagedir, fault_addr, false);
 
-  // Case 1: Stack Growth
+  /* Case 1: Stack Growth */
   void *esp;
   if (cur->esp == NULL)
     esp = f->esp;
@@ -181,31 +181,19 @@ page_fault (struct intr_frame *f)
     return;
   }
 
-  // Case 2: mmap file or executable file
-  if (pte)
+  /* Case 2: executable file */
+  if (pte && (*pte & PTE_F) && (*pte & PTE_E))
   {
-    //ASSERT ((*pte & PTE_P) == 0);
-    //if (write && ((*pte & PTE_W) == 0))
-    //{
-    //  goto fail;
-    //}
-    if ((*pte & PTE_F) && (*pte & PTE_E))
+    if (!load_page_from_file (pte))
     {
-      if (!load_page_from_file (pte))
-      {
-        goto fail;
-      }
-      else
-      {
-        *pte |= PTE_P;
-      }
+      goto fail;
+    }
+    else
+    {
+      *pte |= PTE_P;
+      return;
     }
   }
-  else 
-  {
-    goto fail;
-  } 
-  return;
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
@@ -222,9 +210,10 @@ static bool
 load_page_from_file (uint32_t *pte)
 {
   bool flag = 0;
+  size_t read_bytes = 0;
   ASSERT (*pte & PTE_F);
   struct thread *cur = thread_current ();
-  uint8_t *kpage = frame_get_page (FRM_USER, pte);
+  uint8_t *kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
   if (!kpage)
   {
     return false;
@@ -236,22 +225,21 @@ load_page_from_file (uint32_t *pte)
   {
     struct file_meta meta = spte->daddr.file_meta;
     //TODO may need a file sys lock
-    if (!lock_held_by_current_thread (&filesys_lock))
+    if (meta.read_bytes > 0)
     {
-      lock_acquire (&filesys_lock);
-      flag = 1;
-    }
-    size_t read_bytes = file_read_at (meta.file, kpage, meta.read_bytes, meta.offset);
-    if (flag)
-    {
-      lock_release (&filesys_lock);
+      if (!lock_held_by_current_thread (&filesys_lock))
+      {
+        lock_acquire (&filesys_lock);
+        flag = 1;
+      }
+      read_bytes = file_read_at (meta.file, kpage, meta.read_bytes, meta.offset);
+      if (flag)
+      {
+        lock_release (&filesys_lock);
+      }
     }
     if (read_bytes == meta.read_bytes)
     {
-      if (PGSIZE - read_bytes > 0)
-      {
-        memset (kpage + read_bytes, 0, PGSIZE - read_bytes);
-      }
       *pte = vtop (kpage) | (*pte & PTE_FLAGS);
       lock_release (&cur->spt.lock);
       return true;
