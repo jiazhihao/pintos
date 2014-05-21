@@ -210,9 +210,10 @@ static bool
 load_page_from_file (uint32_t *pte)
 {
   bool flag = 0;
+  size_t read_bytes = 0;
   ASSERT (*pte & PTE_F);
   struct thread *cur = thread_current ();
-  uint8_t *kpage = frame_get_page (FRM_USER, pte);
+  uint8_t *kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
   if (!kpage)
   {
     return false;
@@ -224,22 +225,21 @@ load_page_from_file (uint32_t *pte)
   {
     struct file_meta meta = spte->daddr.file_meta;
     //TODO may need a file sys lock
-    if (!lock_held_by_current_thread (&filesys_lock))
+    if (meta.read_bytes > 0)
     {
-      lock_acquire (&filesys_lock);
-      flag = 1;
-    }
-    size_t read_bytes = file_read_at (meta.file, kpage, meta.read_bytes, meta.offset);
-    if (flag)
-    {
-      lock_release (&filesys_lock);
+      if (!lock_held_by_current_thread (&filesys_lock))
+      {
+        lock_acquire (&filesys_lock);
+        flag = 1;
+      }
+      read_bytes = file_read_at (meta.file, kpage, meta.read_bytes, meta.offset);
+      if (flag)
+      {
+        lock_release (&filesys_lock);
+      }
     }
     if (read_bytes == meta.read_bytes)
     {
-      if (PGSIZE - read_bytes > 0)
-      {
-        memset (kpage + read_bytes, 0, PGSIZE - read_bytes);
-      }
       *pte = vtop (kpage) | (*pte & PTE_FLAGS);
       lock_release (&cur->spt.lock);
       return true;
