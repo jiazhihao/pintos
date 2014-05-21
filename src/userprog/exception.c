@@ -10,6 +10,7 @@
 #include "vm/frame.h"
 #include <string.h>
 #include "threads/vaddr.h"
+#include "userprog/syscall.h"
 #include "vm/swap.h"
 #include "vm/page.h"
 
@@ -158,13 +159,12 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  if (_page_fault(f, fault_addr))
+  if (_page_fault(f->esp, fault_addr))
     return;
  
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-fail:
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",

@@ -14,6 +14,7 @@
 #include "threads/palloc.h"
 #include "filesys/file.h"
 #include "devices/input.h"
+#include "vm/swap.h"
 #include "lib/round.h"
 
 static void syscall_handler (struct intr_frame *);
@@ -145,9 +146,11 @@ check_user_memory (const void *vaddr, size_t size, bool to_write)
   for (; upage < vaddr + size; upage += PGSIZE)
   {
     if (!pagedir_check_userpage (t->pagedir, upage, to_write))
-      return false;
+    {
+      if (!_page_fault(NULL, upage))
+        return false;
+    }
   }
-
   return true;
 }
 
@@ -467,7 +470,7 @@ static bool mte_empty (struct mte *mte)
 /* Return true if we can successfully access the page, false ow.*/
 
 bool
-_page_fault (struct intr_frame *f, void *fault_page)
+_page_fault (void *intr_esp, void *fault_addr)
 {
   if (!is_user_vaddr (fault_addr))
   {
@@ -481,7 +484,7 @@ _page_fault (struct intr_frame *f, void *fault_page)
   /* Case 1: Stack Growth */
   void *esp;
   if (cur->esp == NULL)
-    esp = f->esp;
+    esp = intr_esp;
   else
     esp = cur->esp;
   if ((fault_addr == esp - 4 ||
@@ -497,28 +500,16 @@ _page_fault (struct intr_frame *f, void *fault_page)
   /* Case 2: executable file */
   if (pte && (*pte & PTE_F) && (*pte & PTE_E))
   {
-    if (!load_page_from_file (pte))
-    {
-      return false;
-    }
-    else
-    {
-      return true;
-    }
+    return load_page_from_file (pte);
   }
 
   /* Case 3: page in swap block. */
-  if (pte && !(*pte && PTE_P) && !(*pte && PTE_F))
+  if (pte && *pte != 0 && !(*pte && PTE_P) && !(*pte && PTE_F))
   {
-    if (!load_page_from_swap (pte))
-    {
-      return false;
-    }
-    else
-    {
-      return true;
-    }
-  }
+    return load_page_from_swap (pte);
+  };
+
+  return false;
 }
 
 static void
@@ -589,7 +580,7 @@ load_page_from_swap (uint32_t *pte)
   swap_free_page (&swap_table, swap_page_no);
 
   update_pte (kpage, pte, (*pte | PTE_FLAGS));
-  return false;
+  return true;
 }
 
 static bool

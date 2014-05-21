@@ -99,6 +99,12 @@ evict_and_get_page (enum frame_flags flags)
       /* Case 3.1: if the page is dirty. */
       if (*pte & PTE_D)
       {
+        /* mmaped file. */
+        if ((*pte & PTE_F) && !(*pte & PTE_E))
+        {
+          // 1. Write page back and set Dirty bit to 0
+          // 2. Increase clock hand by 1 and continue.
+        }
       } 
       else /* Case 3.2: if the page is neither accessed or dirty. swap it! */
       {
