@@ -311,9 +311,6 @@ struct Elf32_Phdr
 
 static bool setup_stack (void **esp);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
-static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
-                          uint32_t read_bytes, uint32_t zero_bytes,
-                          bool writable);
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
@@ -408,7 +405,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
           zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
         }
         if (!load_segment (file, file_page, (void *)mem_page,
-                           read_bytes, zero_bytes, writable))
+                           read_bytes, zero_bytes, writable, true))
           goto done;
       }
       else
@@ -496,9 +493,9 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
 
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
-static bool
-load_segment (struct file *file, off_t ofs, uint8_t *upage,
-              uint32_t read_bytes, uint32_t zero_bytes, bool writable)
+bool
+load_segment (struct file *file, off_t ofs, uint8_t *upage, 
+              uint32_t read_bytes, uint32_t zero_bytes, bool writable, bool executable)
 {
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
@@ -515,14 +512,18 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
     /* Get a page of memory. */
     uint32_t *pte = lookup_page (cur->pagedir, upage, true);
-    if (!pte)
+    if (!pte || *pte)
     {
       return false;
     }
-    *pte |= PTE_F | PTE_E | PTE_U;
+    *pte |= PTE_F | PTE_U;
     if (writable)
     {
       *pte |= PTE_W;
+    }
+    if (executable)
+    {
+      *pte |= PTE_E;
     }
     union daddr daddr;
     daddr.file_meta.file = file;
@@ -553,7 +554,6 @@ setup_stack (void **esp)
   bool success = false;
   
   void *upage = ((uint8_t *)PHYS_BASE) - PGSIZE;
-  
   struct thread *t = thread_current();
   uint32_t *pte = lookup_page (t->pagedir, upage, true);
   kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
