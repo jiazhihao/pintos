@@ -215,6 +215,7 @@ process_exit (void)
     pagedir_activate (NULL);
     pagedir_destroy (pd);
   }
+  spt_destroy (&cur->spt);
   if (cur->is_user)
     printf ("%s: exit(%d)\n", cur->name, cur->exit_value);
 

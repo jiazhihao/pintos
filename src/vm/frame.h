@@ -15,19 +15,20 @@ enum frame_flags
 /* Frame table entry */
 struct fte
 {
-  struct thread *thread;      /* Thread that owns this frame table entry. */
+  struct thread *thread;        /* Thread that owns this frame table entry. */
   uint32_t *pte;                /* The beginning virtual address that cooresponds
-                                 to this frame table entry. */
+                                   to this frame table entry. */
 };
 
 /* Frame table*/
 struct frame_table
 {
-  size_t size;                /* total number of frames in this frame table */
-  struct fte *frames;         /* frames in the table */
+  size_t size;                  /* Total number of frames in this frame table */
+  struct fte *frames;           /* Frames in the table */
+  size_t clock_hand;            /* Clock hand for eviciton algorithm. */
 };
 
-struct frame_table frame_table;  /* frame table used to check user memory. */
+struct frame_table frame_table; /* Global table used to check user memory. */
 
 void frame_init (void *base, size_t page_cnt);
 size_t frame_table_size (size_t page_cnt);
