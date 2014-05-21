@@ -113,6 +113,7 @@ evict_and_get_page (enum frame_flags flags)
       continue;
     }
     bool is_mmap_page = (*pte & PTE_F) && !(*pte & PTE_E);
+    bool is_exec_page = (*pte & PTE_F) && (*pte & PTE_E);
     lock_acquire (&fte->thread->spt.lock);
     spte = spt_find (&fte->thread->spt, pte);
     bool has_swap_page = !(*pte & PTE_F) && (spte != NULL);
@@ -147,6 +148,7 @@ evict_and_get_page (enum frame_flags flags)
           }
         }
         spte->daddr.swap_addr = swap_page_no;
+        /* Once swapped, read from swap next time. */
         *pte &= ~PTE_F;
         *pte &= ~PTE_E;
       }
@@ -171,7 +173,12 @@ evict_and_get_page (enum frame_flags flags)
     {
     }
     /* Case 4.2: exec. file or non-file. without swap_page*/
-    if (!is_mmap_page && !has_swap_page)
+    /* Case 4.2.1: exec. file. No need to write back. */
+    if (!is_mmap_page && is_exec_page && !has_swap_page)
+    {
+    }
+    /* Case 4.2.2: non-file. Write to swap. */
+    if (!is_mmap_page && !is_exec_page && !has_swap_page)
     {
       size_t swap_page_no = swap_get_page (&swap_table);
       swap_write_page (&swap_table, swap_page_no, kpage);

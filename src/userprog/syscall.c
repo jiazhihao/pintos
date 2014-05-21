@@ -564,8 +564,7 @@ _page_fault (void *intr_esp, void *fault_addr)
     && fault_addr >= STACK_BOUNDARY
 	&& (pte == NULL || *pte == 0))
   {
-    stack_growth(fault_page);
-    return true;
+    return stack_growth(fault_page);
   }
 
   /* Case 2: executable file */
@@ -578,7 +577,7 @@ _page_fault (void *intr_esp, void *fault_addr)
   if (pte && *pte != 0 && !(*pte && PTE_P) && !(*pte && PTE_F))
   {
     return load_page_from_swap (pte);
-  };
+  }
 
   return false;
 }
