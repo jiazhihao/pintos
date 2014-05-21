@@ -94,7 +94,7 @@ evict_and_get_page (enum frame_flags flags)
 
     lock_acquire (&fte->lock);
     pte = fte->pte;
-    //ASSERT (pte != NULL);
+    ASSERT ((fte->thread != NULL));    
 
     /* Case 1: if the page or frame is pinned, skip it.
        fte->pte==NULL means the fte is not yet set (i.e. fte is pinned) */
@@ -162,6 +162,7 @@ evict_and_get_page (enum frame_flags flags)
       continue;
     }
     /* At this point, a evictable frame has been found. */ 
+
     /* Case 4: the page is neither accessed nor dirty. swap it! */
     /* Case 4.1: mmaped file. */
     if (is_mmap_page)

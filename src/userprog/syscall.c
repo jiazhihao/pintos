@@ -635,8 +635,8 @@ load_page_from_swap (uint32_t *pte)
 
   struct thread *cur = thread_current ();
   struct spte *spte = spt_find (&cur->spt, pte);
+  ASSERT ((spte != NULL) && (spte->daddr.swap_addr != 0));
   size_t swap_page_no = spte->daddr.swap_addr;
-  ASSERT (swap_page_no != 0);
 
   swap_read_page (&swap_table, swap_page_no, kpage);
   swap_free_page (&swap_table, swap_page_no);

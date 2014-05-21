@@ -41,9 +41,16 @@ pagedir_destroy (uint32_t *pd)
         uint32_t *pte;
         
         for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
+        {
           if (*pte & PTE_P) 
+          {
             frame_free_page (pte_get_page (*pte));
-        // TODO (rqi), consider file write-back
+          }
+          else
+          {
+            // TODO (rqi) release swap resources 
+          }
+        }
         palloc_free_page (pt);
       }
   palloc_free_page (pd);
