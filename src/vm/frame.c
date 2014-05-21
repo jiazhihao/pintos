@@ -102,16 +102,18 @@ evict_and_get_page (enum frame_flags flags)
       } 
       else /* Case 3.2: if the page is neither accessed or dirty. swap it! */
       {
-        *pte |= PTE_F;
+        /* Update PTE */
         // ? *pte |= PTE_A;
         *pte &= ~PTE_P;
         *pte &= PTE_FLAGS;
+        /* Get one slot from swap block and write page to swap. */
         size_t swap_page_no = swap_get_page (&swap_table);
+        swap_write_page (&swap_table, swap_page_no, kpage);
+        /* Update SPTE. */
         lock_acquire (&cur->spt.lock);
         spte = spt_find (&cur->spt, pte);
         spte->daddr.swap_addr = swap_page_no;
         lock_release (&cur->spt.lock);
-        swap_write_page (&swap_table, swap_page_no, kpage);
       }
     } /* End of case 3. */
     
