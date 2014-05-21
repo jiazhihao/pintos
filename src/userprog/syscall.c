@@ -497,27 +497,13 @@ _page_fault (void *intr_esp, void *fault_addr)
   /* Case 2: executable file */
   if (pte && (*pte & PTE_F) && (*pte & PTE_E))
   {
-    if (!load_page_from_file (pte))
-    {
-      return false;
-    }
-    else
-    {
-      return true;
-    }
+    return load_page_from_file (pte);
   }
 
   /* Case 3: page in swap block. */
-  if (pte && !(*pte && PTE_P) && !(*pte && PTE_F))
+  if (pte && *pte != 0 && !(*pte && PTE_P) && !(*pte && PTE_F))
   {
-    if (!load_page_from_swap (pte))
-    {
-      return false;
-    }
-    else
-    {
-      return true;
-    }
+    return load_page_from_swap (pte);
   };
 
   return false;
@@ -591,7 +577,7 @@ load_page_from_swap (uint32_t *pte)
   swap_free_page (&swap_table, swap_page_no);
 
   update_pte (kpage, pte, (*pte | PTE_FLAGS));
-  return false;
+  return true;
 }
 
 static bool
