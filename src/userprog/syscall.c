@@ -376,21 +376,24 @@ static mapid_t _mmap (int fd, void *addr)
   {
     return -1;
   }
+  if (!is_user_vaddr (addr) || !is_user_vaddr (addr + size))
+  {
+    _exit (-1);
+  }
   if (pg_ofs (addr) || !addr)
   {
     return -1;
   }
   size_t page_cnt = ROUND_UP(size, PGSIZE);
+  if (!load_segment (file, 0, addr, size, PGSIZE * page_cnt - size, true, false))
+  {
+    return -1;
+  }
   mapid_t mapid;
   struct mte mte = { addr, page_cnt };
   mapid = mt_add (thread_current (), &mte);
   if (mapid < 0)
   {
-    return -1;
-  }
-  if (!load_segment (file, 0, addr, size, PGSIZE * page_cnt - size, true, false))
-  {
-    mt_rm (thread_current (), mapid);
     return -1;
   }
   return mapid;

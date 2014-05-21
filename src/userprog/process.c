@@ -494,13 +494,13 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
 bool
-load_segment (struct file *file, off_t ofs, uint8_t *upage, 
+load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable, bool executable)
 {
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
-
+  uint8_t *input_page = upage;
   file_seek (file, ofs);
   struct thread *cur = thread_current ();
   while (read_bytes > 0 || zero_bytes > 0)
@@ -514,7 +514,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     uint32_t *pte = lookup_page (cur->pagedir, upage, true);
     if (!pte || *pte)
     {
-      return false;
+      goto fail;
     }
     *pte |= PTE_F | PTE_U;
     if (writable)
@@ -533,7 +533,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     if (!spt_insert (&cur->spt, pte, &daddr))
     {
       lock_release (&cur->spt.lock);
-      return false;
+      goto fail;
     }
     lock_release (&cur->spt.lock);
     ofs += page_read_bytes;
@@ -543,6 +543,17 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     upage += PGSIZE;
   }
   return true;
+
+fail:
+  if (upage > input_page)
+  {
+    lock_acquire (&cur->spt.lock);
+    for (upage -= PGSIZE; upage >= input_page; upage -= PGSIZE)
+    {
+      spt_delete (&cur->spt, lookup_page (cur->pagedir, upage, false));
+    }
+  }
+  return false;
 }
 
 /* Create a minimal stack by mapping a zeroed page at the top of
