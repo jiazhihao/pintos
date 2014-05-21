@@ -43,6 +43,7 @@ pagedir_destroy (uint32_t *pd)
         for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
           if (*pte & PTE_P) 
             frame_free_page (pte_get_page (*pte));
+        // TODO (rqi), consider file write-back
         palloc_free_page (pt);
       }
   palloc_free_page (pd);
@@ -93,7 +94,7 @@ pagedir_check_userpage (uint32_t *pd, void *upage, bool to_write)
 {
   uint32_t *pte = lookup_page (pd, upage, false);
   /* present + user mode */
-  if (pte == NULL || !(*pte & PTE_U) || !(*pte))
+  if (pte == NULL || !(*pte & PTE_U) || !(*pte & PTE_P))
     return false;
   /* writable address */
   if (to_write && !(*pte & PTE_W))

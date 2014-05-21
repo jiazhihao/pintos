@@ -9,7 +9,8 @@ swap_table_init (struct swap_table *swap_table)
   
   int pages_in_block = block_size (swap_table->swap_block) / SECTORS_PER_PAGE;
   swap_table->used_map = bitmap_create (pages_in_block);
-
+  /* First slot is always unused. */
+  bitmap_set (swap_table->used_map, 0, true);
   lock_init (&swap_table->block_lock);
   lock_init (&swap_table->bitmap_lock);
 }
