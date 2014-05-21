@@ -30,6 +30,9 @@ static int _open (const char *file);
 static int _filesize (int fd);
 static void _seek (int fd, uint32_t position);
 static uint32_t _tell (int fd);
+static bool load_page_from_file (uint32_t *);
+static bool load_page_from_swap (uint32_t *);
+static bool stack_growth (void *);
 
 
 extern struct lock filesys_lock;
@@ -343,4 +346,143 @@ _close (int fd)
     lock_release (&filesys_lock);
     thread_rm_file (thread_current (), fd);
   }
+}
+
+/* Return true if we can successfully access the page, false ow.*/
+
+bool
+_page_fault (struct intr_frame *f, void *fault_page)
+{
+  if (!is_user_vaddr (fault_addr))
+  {
+    return false;
+  }
+
+  struct thread *cur = thread_current ();
+  void *fault_page = pg_round_down(fault_addr);
+  uint32_t *pte = lookup_page (cur->pagedir, fault_addr, false);
+
+  /* Case 1: Stack Growth */
+  void *esp;
+  if (cur->esp == NULL)
+    esp = f->esp;
+  else
+    esp = cur->esp;
+  if ((fault_addr == esp - 4 ||
+       fault_addr == esp - 32 ||
+       fault_addr >= esp)
+    && fault_addr >= STACK_BOUNDARY
+	&& (pte == NULL || *pte == 0))
+  {
+    stack_growth(fault_page);
+    return true;
+  }
+
+  /* Case 2: executable file */
+  if (pte && (*pte & PTE_F) && (*pte & PTE_E))
+  {
+    if (!load_page_from_file (pte))
+    {
+      return false;
+    }
+    else
+    {
+      return true;
+    }
+  }
+
+  /* Case 3: page in swap block. */
+  if (pte && !(*pte && PTE_P) && !(*pte && PTE_F))
+  {
+    if (!load_page_from_swap (pte))
+    {
+      return false;
+    }
+    else
+    {
+      return true;
+    }
+  }
+}
+
+static void
+update_pte (void *kpage, uint32_t *pte, uint32_t flags)
+{
+  ASSERT (!(*pte & PTE_P));
+  *pte = vtop (kpage) | flags;
+  *pte |= PTE_P;
+}
+
+static bool
+load_page_from_file (uint32_t *pte)
+{
+  bool flag = 0;
+  size_t read_bytes = 0;
+  ASSERT (*pte & PTE_F);
+  struct thread *cur = thread_current ();
+  uint8_t *kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
+  if (!kpage)
+  {
+    return false;
+  }
+  ASSERT (pg_ofs (kpage) == 0);
+  lock_acquire (&cur->spt.lock);
+  struct spte *spte = spt_find (&cur->spt, pte);
+  if (spte)
+  {
+    struct file_meta meta = spte->daddr.file_meta;
+    //TODO may need a file sys lock
+    if (meta.read_bytes > 0)
+    {
+      if (!lock_held_by_current_thread (&filesys_lock))
+      {
+        lock_acquire (&filesys_lock);
+        flag = 1;
+      }
+      read_bytes = file_read_at (meta.file, kpage, meta.read_bytes, meta.offset);
+      if (flag)
+      {
+        lock_release (&filesys_lock);
+      }
+    }
+    if (read_bytes == meta.read_bytes)
+    {
+      update_pte (kpage, pte, (*pte & PTE_FLAGS));
+      lock_release (&cur->spt.lock);
+      return true;
+    }
+  }
+  lock_release (&cur->spt.lock);
+  frame_free_page (kpage);
+  return false;
+}
+
+static bool
+load_page_from_swap (uint32_t *pte)
+{
+  ASSERT (pte != NULL);
+
+  void *kpage = frame_get_page (FRM_USER, pte);
+
+  struct thread *cur = thread_current ();
+  struct spte *spte = spt_find (&cur->spt, pte);
+  size_t swap_page_no = spte->daddr.swap_addr;
+  ASSERT (swap_page_no != 0);
+
+  swap_read_page (&swap_table, swap_page_no, kpage);
+  swap_free_page (&swap_table, swap_page_no);
+
+  update_pte (kpage, pte, (*pte | PTE_FLAGS));
+  return false;
+}
+
+static bool
+stack_growth (void *upage)
+{
+  uint32_t *pte = lookup_page (thread_current()->pagedir, upage, true);
+  void *kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
+  if (kpage == NULL)
+    return false;
+  update_pte (kpage, pte, PTE_U | PTE_P | PTE_W);
+  return true;
 }
