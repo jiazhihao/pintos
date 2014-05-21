@@ -135,7 +135,7 @@ struct exit_status
 struct mte
 {
   void *vaddr;                          /* The start addr of this map */
-  size_t page_cnt;                      /* The mapped page count */
+  size_t size;                          /* The mapped page count */
 };
 
 /* If false (default), use round-robin scheduler.

@@ -35,9 +35,11 @@ static mapid_t _mmap (int fd, void *addr);
 static mapid_t mt_add (struct thread *t, struct mte* mte);
 static void mt_rm (struct thread *t, mapid_t mapid);
 static bool mte_empty (struct mte *mte);
+static struct mte *mt_get (struct thread *t, mapid_t mapid);
 static bool load_page_from_file (uint32_t *);
 static bool load_page_from_swap (uint32_t *);
 static bool stack_growth (void *);
+static void _munmap (mapid_t mapping);
 
 
 extern struct lock filesys_lock;
@@ -125,6 +127,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     f->eax = (uint32_t)_mmap ((int)arg1, (void *)arg2);
     break;
   case SYS_MUNMAP:
+    arg1 = get_stack_entry (esp, 1);
+    _munmap ((mapid_t)arg1);
     break;
   }
 
@@ -368,7 +372,7 @@ static mapid_t _mmap (int fd, void *addr)
   {
     return -1;
   }
-  struct file *file = thread_get_file (thread_current (), fd);
+  struct file *file = file_reopen(thread_get_file (thread_current (), fd));
   if (file == NULL)
   {
     return -1;
@@ -378,26 +382,83 @@ static mapid_t _mmap (int fd, void *addr)
   {
     return -1;
   }
+  if (!is_user_vaddr (addr) || !is_user_vaddr (addr + size))
+  {
+    _exit (-1);
+  }
   if (pg_ofs (addr) || !addr)
   {
     return -1;
   }
   size_t page_cnt = ROUND_UP(size, PGSIZE);
+  if (!load_segment (file, 0, addr, size, PGSIZE * page_cnt - size, true, false))
+  {
+    return -1;
+  }
   mapid_t mapid;
-  struct mte mte = { addr, page_cnt };
+  struct mte mte = { addr, size };
   mapid = mt_add (thread_current (), &mte);
   if (mapid < 0)
   {
     return -1;
   }
-  if (!load_segment (file, 0, addr, size, PGSIZE * page_cnt - size, true, false))
-  {
-    mt_rm (thread_current (), mapid);
-    return -1;
-  }
   return mapid;
 }
 
+static void _munmap (mapid_t mapping)
+{
+  struct thread *cur = thread_current ();
+  struct mte *mte = mt_get (cur, mapping);
+  if (mte && (!mte_empty (mte)))
+  {
+    uint32_t *pte = lookup_page (cur->pagedir, mte->vaddr, false);
+    ASSERT (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U) && (*pte & PTE_W) && !((*pte & PTE_E)));
+    if (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U))
+    {
+      lock_acquire (&cur->spt.lock);
+      struct spte *spte = spt_find (&cur->spt, pte);
+      if (!spte)
+      {
+        return;
+      }
+      struct file *file = spte->daddr.file_meta.file;
+      if (!file)
+      {
+        spt_delete (&cur->spt, pte);
+        return;
+      }
+      void *vaddr = mte->vaddr;
+      size_t size = mte->size;
+      size_t write_bytes = 0;
+      off_t offset = 0;
+      while (size > 0)
+      {
+        pte = lookup_page (cur->pagedir, vaddr, false);
+        spt_delete (&cur->spt, pte);
+        write_bytes = size > PGSIZE ? PGSIZE : size;
+        if (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U))
+        {
+          if (*pte & PTE_P)
+          {
+            lock_acquire (&filesys_lock);
+            file_write_at (file, pte_get_page (*pte), write_bytes, offset);
+            lock_release (&filesys_lock);
+            *pte = 0;
+            frame_free_page (pte_get_page (*pte));
+          }
+          *pte = 0;
+        }
+        size -= write_bytes;
+        offset += write_bytes;
+      }
+      lock_acquire (&filesys_lock);
+      file_close (file);
+      lock_release (&filesys_lock);
+      lock_release (&cur->spt.lock);
+    }
+    mt_rm (cur, mapping);
+  }
+}
 
 /* Add a mmap entry to the thread's mmap table.
 * Double space for mmap table if necessary.
@@ -454,13 +515,21 @@ static void mt_rm (struct thread *t, mapid_t mapid)
   if (mapid < t->mt_size)
   {
     t->mt[mapid].vaddr = NULL;
-    t->mt[mapid].page_cnt = 0;
+    t->mt[mapid].size = 0;
   }
 }
 
 static bool mte_empty (struct mte *mte)
 {
-  return mte->vaddr == NULL && mte->page_cnt == 0;
+  return mte->vaddr == NULL && mte->size == 0;
+}
+
+static struct mte *mt_get (struct thread *t, mapid_t mapid)
+{
+  if (mapid >= 0 && mapid < t->mt_size)
+    return &(t->mt[mapid]);
+  else
+    return NULL;
 }
 
 /* Return true if we can successfully access the page, false ow.*/
@@ -476,6 +545,11 @@ _page_fault (void *intr_esp, void *fault_addr)
   struct thread *cur = thread_current ();
   void *fault_page = pg_round_down(fault_addr);
   uint32_t *pte = lookup_page (cur->pagedir, fault_addr, false);
+
+  if (pte && (*pte & PTE_P))
+  {
+    return false;
+  }
 
   /* Case 1: Stack Growth */
   void *esp;
@@ -494,7 +568,7 @@ _page_fault (void *intr_esp, void *fault_addr)
   }
 
   /* Case 2: executable file */
-  if (pte && (*pte & PTE_F) && (*pte & PTE_E))
+  if (pte && (*pte & PTE_F))
   {
     return load_page_from_file (pte);
   }
@@ -519,7 +593,6 @@ update_pte (void *kpage, uint32_t *pte, uint32_t flags)
 static bool
 load_page_from_file (uint32_t *pte)
 {
-  bool flag = 0;
   size_t read_bytes = 0;
   ASSERT (*pte & PTE_F);
   struct thread *cur = thread_current ();
@@ -537,16 +610,9 @@ load_page_from_file (uint32_t *pte)
     //TODO may need a file sys lock
     if (meta.read_bytes > 0)
     {
-      if (!lock_held_by_current_thread (&filesys_lock))
-      {
-        lock_acquire (&filesys_lock);
-        flag = 1;
-      }
+      lock_acquire (&filesys_lock);
       read_bytes = file_read_at (meta.file, kpage, meta.read_bytes, meta.offset);
-      if (flag)
-      {
-        lock_release (&filesys_lock);
-      }
+      lock_release (&filesys_lock);
     }
     if (read_bytes == meta.read_bytes)
     {
