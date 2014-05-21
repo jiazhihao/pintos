@@ -8,6 +8,10 @@
 #include "threads/pte.h"
 #include "threads/synch.h"
 #include <string.h>
+#include "userprog/syscall.h"
+#include "filesys/file.h"
+
+extern struct lock filesys_lock;
 
 void 
 frame_init (void *base, size_t page_cnt)
@@ -20,7 +24,9 @@ frame_init (void *base, size_t page_cnt)
   {
     frame_table.frames[i].thread = NULL;
     frame_table.frames[i].pte = NULL;
+    lock_init (&frame_table.frames[i].lock);
   }
+  lock_init (&frame_table.clock_lock);
 }
 
 size_t
@@ -44,8 +50,10 @@ frame_free_multiple (void *pages, size_t page_cnt)
   size_t page_idx = pg_no (pages) - pg_no (user_pool.base);
   for (i = page_idx; i < page_idx + page_cnt; i++)
   {
+    lock_acquire (&frame_table.frames[i].lock);
     frame_table.frames[i].thread = NULL;
     frame_table.frames[i].pte = NULL;
+    lock_release (&frame_table.frames[i].lock);
   }
 
   palloc_free_multiple (pages, page_cnt);
@@ -59,9 +67,11 @@ frame_free_page (void *page)
 }
 
 static inline void
-clock_hand_increase_one ()
+clock_hand_increase_one (void)
 {
+  lock_acquire (&frame_table.clock_lock); 
   frame_table.clock_hand = (frame_table.clock_hand + 1) % frame_table.size;
+  lock_release (&frame_table.clock_lock); 
 }
 
 /* Evict a frame, write back if necessary, update PTE and SPTE.
@@ -70,21 +80,28 @@ clock_hand_increase_one ()
 static void *
 evict_and_get_page (enum frame_flags flags)
 {
+  struct fte *fte;
   uint32_t *pte;
   struct spte *spte;
   void *kpage;
-  struct thread *cur = thread_current ();
 
   while (1) 
   {
-    pte = frame_table.frames[frame_table.clock_hand].pte;
+    lock_acquire (&frame_table.clock_lock); 
+    fte = &frame_table.frames[frame_table.clock_hand];
     kpage = user_pool.base + frame_table.clock_hand * PGSIZE;
-    ASSERT (pte != NULL);
+    lock_release (&frame_table.clock_lock);
 
-    /* Case 1: if the page is pinned, skip it. */
-    if (*pte & PTE_I)
+    lock_acquire (&fte->lock);
+    pte = fte->pte;
+    //ASSERT (pte != NULL);
+
+    /* Case 1: if the page or frame is pinned, skip it.
+       fte->pte==NULL means the fte is not yet set (i.e. fte is pinned) */
+    if ((pte == NULL) || (*pte & PTE_I))
     {
       clock_hand_increase_one ();
+      lock_release (&fte->lock);
       continue;
     }
     /* Case 2: if the page is accessed recently, reset access bit and skip it. */
@@ -92,37 +109,95 @@ evict_and_get_page (enum frame_flags flags)
     {
       *pte &= ~PTE_A;
       clock_hand_increase_one ();
+      lock_release (&fte->lock);
       continue;
     }
-    else /* Case 3: if PTE_A is 0 */
+    bool is_mmap_page = (*pte & PTE_F) && !(*pte & PTE_E);
+    lock_acquire (&fte->thread->spt.lock);
+    spte = spt_find (&fte->thread->spt, pte);
+    bool has_swap_page = (spte != NULL) && (spte->daddr.swap_addr != 0);
+    /* Case 3: if unaccessed but dirty. */
+    if (*pte & PTE_D)
     {
-      /* Case 3.1: if the page is dirty. */
-      if (*pte & PTE_D)
+      /* Case 3.1: mmaped file. */
+      if (is_mmap_page)
       {
-        /* mmaped file. */
-        if ((*pte & PTE_F) && !(*pte & PTE_E))
-        {
-          // 1. Write page back and set Dirty bit to 0
-          // 2. Increase clock hand by 1 and continue.
-        }
-      } 
-      else /* Case 3.2: if the page is neither accessed or dirty. swap it! */
+        spte = spt_find (&fte->thread->spt, pte);
+        ASSERT ((spte != NULL) && (spte->daddr.file_meta.file != NULL));
+        struct file_meta *fm = &spte->daddr.file_meta;
+        lock_acquire (&filesys_lock);
+        file_write_at (fm->file, kpage, fm->read_bytes, fm->offset);
+        lock_release (&filesys_lock);
+      }
+      /* Case 3.2: exec. file or non-file. without swap_page*/
+      if (!is_mmap_page && !has_swap_page)
       {
-        /* Update PTE */
-        // ? *pte |= PTE_A;
-        *pte &= ~PTE_P;
-        *pte &= PTE_FLAGS;
-        /* Get one slot from swap block and write page to swap. */
         size_t swap_page_no = swap_get_page (&swap_table);
         swap_write_page (&swap_table, swap_page_no, kpage);
-        /* Update SPTE. */
-        lock_acquire (&cur->spt.lock);
-        spte = spt_find (&cur->spt, pte);
+        spte = spt_find (&fte->thread->spt, pte);
+        if (spte == NULL)
+        {
+          union daddr daddr;
+          daddr.swap_addr = swap_page_no;
+          spte = spt_insert (&fte->thread->spt, pte, &daddr);
+          if (spte == NULL) {
+            lock_release (&fte->thread->spt.lock);
+            lock_release (&fte->lock);
+            _exit (-1);
+          }
+        }
         spte->daddr.swap_addr = swap_page_no;
-        lock_release (&cur->spt.lock);
       }
-    } /* End of case 3. */
-    
+      /* Case 3.3: exec. file or non-file with swap_page */
+      if (!is_mmap_page && has_swap_page)
+      {
+        spte = spt_find (&fte->thread->spt, pte);
+        ASSERT ((spte != NULL) && (spte->daddr.swap_addr != 0));
+        swap_write_page (&swap_table, spte->daddr.swap_addr, kpage);  
+      }
+      *pte &= ~PTE_D;
+      clock_hand_increase_one ();
+      lock_release (&fte->thread->spt.lock);
+      lock_release (&fte->lock);
+      continue;
+    }
+    /* At this point, a evictable frame has been found. */ 
+    /* Case 4: the page is neither accessed nor dirty. swap it! */
+    /* Case 4.1: mmaped file. */
+    if (is_mmap_page)
+    {
+    }
+    /* Case 4.2: exec. file or non-file. without swap_page*/
+    if (!is_mmap_page && !has_swap_page)
+    {
+      size_t swap_page_no = swap_get_page (&swap_table);
+      swap_write_page (&swap_table, swap_page_no, kpage);
+      spte = spt_find (&fte->thread->spt, pte);
+      if (spte == NULL)
+      {
+        union daddr daddr;
+        daddr.swap_addr = swap_page_no;
+        spte = spt_insert (&fte->thread->spt, pte, &daddr);
+        if (spte == NULL) {
+          lock_release (&fte->thread->spt.lock);
+          lock_release (&fte->lock);
+          _exit (-1);
+        }
+      }
+      spte->daddr.swap_addr = swap_page_no;
+    }
+    /* Case 4.3: exec. file or non-file with swap_page */
+    if (!is_mmap_page && has_swap_page)
+    {
+    }
+
+    *pte |= PTE_A;
+    *pte &= ~PTE_P;
+    *pte &= PTE_FLAGS; 
+    fte->thread = NULL;
+    fte->pte = NULL; 
+    lock_release (&fte->thread->spt.lock);
+    lock_release (&fte->lock);
     if (flags & FRM_ZERO)
       memset (kpage, 0, PGSIZE);
     return kpage;
@@ -141,14 +216,15 @@ frame_get_page (enum frame_flags flags, uint32_t *pte)
   void *kpage = palloc_get_multiple (flags, 1);
   if (kpage == NULL)
   {
-    //PANIC ("frame_get: out of pages");
     kpage = evict_and_get_page (flags);
   }
 
   struct thread *t = thread_current ();
   size_t page_idx = pg_no (kpage) - pg_no (user_pool.base);
+  lock_acquire (&frame_table.frames[page_idx].lock);
   frame_table.frames[page_idx].thread = t;
   frame_table.frames[page_idx].pte = pte;
+  lock_release (&frame_table.frames[page_idx].lock);
 
   return kpage;
 }

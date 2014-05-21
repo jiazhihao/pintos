@@ -21,7 +21,6 @@ static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
 static uint32_t get_stack_entry (uint32_t *esp, size_t offset);
 static void _halt (void);
-static void _exit (int status);
 static int _wait (int pid);
 static int _read (int fd, void *buffer, unsigned size);
 static int _write (int fd, const void *buffer, unsigned size);
@@ -185,7 +184,7 @@ _halt (void)
   shutdown_power_off ();
 }
 
-static void
+void
 _exit (int status)
 {
   struct thread* cur = thread_current ();

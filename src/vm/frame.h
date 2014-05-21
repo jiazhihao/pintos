@@ -18,6 +18,7 @@ struct fte
   struct thread *thread;        /* Thread that owns this frame table entry. */
   uint32_t *pte;                /* The beginning virtual address that cooresponds
                                    to this frame table entry. */
+  struct lock lock;             /* Per entry lock. */
 };
 
 /* Frame table*/
@@ -26,6 +27,7 @@ struct frame_table
   size_t size;                  /* Total number of frames in this frame table */
   struct fte *frames;           /* Frames in the table */
   size_t clock_hand;            /* Clock hand for eviciton algorithm. */
+  struct lock clock_lock;       /* Lock for clock_hand. */
 };
 
 struct frame_table frame_table; /* Global table used to check user memory. */
