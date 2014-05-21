@@ -105,6 +105,8 @@ struct thread
   bool is_user;                       /* Flag to identify whether the 
                                          thread is user process. */
   struct spt spt;                     /* Supplemental page table */
+  struct mte *mt;                     /* Mmap table */
+  int mt_size;                        /* Mmap table size */
   void *esp;                          /* User esp value at the initial
                                          transition from user to kernel*/
 #endif
@@ -127,6 +129,13 @@ struct exit_status
                                            wait and child's exit. */
   struct list_elem elem;                /* List elem for thread's child_list*/
   struct thread *thread;                /* Pointer to the owning thread. */
+};
+
+/* Mmap table entry */
+struct mte
+{
+  void *vaddr;                          /* The start addr of this map */
+  size_t page_cnt;                      /* The mapped page count */
 };
 
 /* If false (default), use round-robin scheduler.

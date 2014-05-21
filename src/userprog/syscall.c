@@ -14,6 +14,7 @@
 #include "threads/palloc.h"
 #include "filesys/file.h"
 #include "devices/input.h"
+#include "lib/round.h"
 
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
@@ -30,6 +31,10 @@ static int _open (const char *file);
 static int _filesize (int fd);
 static void _seek (int fd, uint32_t position);
 static uint32_t _tell (int fd);
+static mapid_t _mmap (int fd, void *addr);
+static mapid_t mt_add (struct thread *t, struct mte* mte);
+static void mt_rm (struct thread *t, mapid_t mapid);
+static bool mte_empty (struct mte *mte);
 
 
 extern struct lock filesys_lock;
@@ -110,6 +115,13 @@ syscall_handler (struct intr_frame *f UNUSED)
   case SYS_CLOSE:
     arg1 = get_stack_entry (esp, 1);
     _close ((int)arg1);
+    break;
+  case SYS_MMAP:
+    arg1 = get_stack_entry (esp, 1);
+    arg2 = get_stack_entry (esp, 2);
+    f->eax = (uint32_t)_mmap ((int)arg1, (void *)arg2);
+    break;
+  case SYS_MUNMAP:
     break;
   }
 
@@ -343,4 +355,105 @@ _close (int fd)
     lock_release (&filesys_lock);
     thread_rm_file (thread_current (), fd);
   }
+}
+
+static mapid_t _mmap (int fd, void *addr)
+{
+  if (fd == 0 || fd == 1)
+  {
+    return -1;
+  }
+  struct file *file = thread_get_file (thread_current (), fd);
+  if (file == NULL)
+  {
+    return -1;
+  }
+  int size = _filesize (fd);
+  if (size <= 0)
+  {
+    return -1;
+  }
+  if (pg_ofs (addr) || !addr)
+  {
+    return -1;
+  }
+  size_t page_cnt = ROUND_UP(size, PGSIZE);
+  mapid_t mapid;
+  struct mte mte = { addr, page_cnt };
+  mapid = mt_add (thread_current (), &mte);
+  if (mapid < 0)
+  {
+    return -1;
+  }
+  if (!load_segment (file, 0, addr, size, PGSIZE * page_cnt - size, true, false))
+  {
+    mt_rm (thread_current (), mapid);
+    return -1;
+  }
+  return mapid;
+}
+
+
+/* Add a mmap entry to the thread's mmap table.
+* Double space for mmap table if necessary.
+* Return the mapid */
+static mapid_t mt_add (struct thread *t, struct mte* mte)
+{
+  if (mte == NULL)
+  {
+    return -1;
+  }
+  mapid_t mapid = 0;
+
+  if (t->mt_size == 0)
+  {
+    t->mt = (struct mte *)palloc_get_page (PAL_ZERO);
+    if (t->mt == NULL)
+      return -1;
+    t->mt_size = PGSIZE / sizeof(struct mte);
+  }
+  else
+  {
+    for (mapid = 0; mapid < t->mt_size; mapid++)
+    {
+      if (mte_empty (&(t->mt[mapid])))
+      {
+        break;
+      }
+    }
+    /* Didn't find empty slot in original file table, need to double
+    * file table size. */
+    if (mapid == t->mt_size)
+    {
+      int ft_page_num = t->mt_size * sizeof(struct mte) / PGSIZE * 2;
+      struct mte * new_mt =
+        (struct mte *) palloc_get_multiple (PAL_ZERO, ft_page_num);
+      if (new_mt == NULL)
+        return -1;
+      memcpy (new_mt, t->mt,
+              t->mt_size * sizeof(struct mte));
+      palloc_free_multiple (t->mt,
+                            t->mt_size * sizeof(struct mte) / PGSIZE);
+      t->mt = new_mt;
+      t->mt_size = t->mt_size * 2;
+      mapid = mapid + 1;
+    }
+  }
+  t->mt[mapid] = *mte;
+  return mapid;
+}
+
+/* Remove file from file table. */
+static void mt_rm (struct thread *t, mapid_t mapid)
+{
+  if (mapid < t->mt_size)
+  {
+    t->mt[mapid].vaddr = NULL;
+    t->mt[mapid].page_cnt = 0;
+  }
+}
+
+static bool mte_empty (struct mte *mte)
+{
+  return mte->vaddr == NULL && mte->page_cnt == 0;
 }
