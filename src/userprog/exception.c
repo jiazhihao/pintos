@@ -10,6 +10,7 @@
 #include "vm/frame.h"
 #include <string.h>
 #include "threads/vaddr.h"
+#include "userprog/syscall.h"
 #include "vm/swap.h"
 #include "vm/page.h"
 
@@ -18,9 +19,6 @@ static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
-static bool load_page_from_file (uint32_t *pte);
-static bool load_page_from_swap (uint32_t *pte);
-static bool stack_growth (void *upage);
 
 extern struct lock filesys_lock;
 
@@ -160,60 +158,13 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
-  if (!not_present || !is_user_vaddr (fault_addr))
-  {
-    goto fail;
-  }
-  struct thread *cur = thread_current ();
-  void *fault_page = pg_round_down(fault_addr);
-  uint32_t *pte = lookup_page (cur->pagedir, fault_addr, false);
 
-  /* Case 1: Stack Growth */
-  void *esp;
-  if (cur->esp == NULL)
-    esp = f->esp;
-  else
-    esp = cur->esp;
-  if ((fault_addr == esp - 4 ||
-       fault_addr == esp - 32 ||
-       fault_addr >= esp)
-    && fault_addr >= STACK_BOUNDARY
-	&& (pte == NULL || *pte == 0))
-  {
-    stack_growth(fault_page);
+  if (_page_fault(f->esp, fault_addr))
     return;
-  }
-
-  /* Case 2: executable file */
-  if (pte && (*pte & PTE_F) && (*pte & PTE_E))
-  {
-    if (!load_page_from_file (pte))
-    {
-      goto fail;
-    }
-    else
-    {
-      return;
-    }
-  }
-  
-  /* Case 3: page in swap block. */
-  if (pte && !(*pte && PTE_P) && !(*pte && PTE_F))
-  {
-    if (!load_page_from_swap (pte))
-    {
-      goto fail;
-    }
-    else
-    {
-      return;
-    }
-  }
  
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-fail:
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",
@@ -222,84 +173,4 @@ fail:
   kill (f);
 }
 
-static void
-update_pte (void *kpage, uint32_t *pte, uint32_t flags)
-{
-  ASSERT (!(*pte & PTE_P));
-  *pte = vtop (kpage) | flags;
-  *pte |= PTE_P;
-}
 
-static bool
-load_page_from_file (uint32_t *pte)
-{
-  bool flag = 0;
-  size_t read_bytes = 0;
-  ASSERT (*pte & PTE_F);
-  struct thread *cur = thread_current ();
-  uint8_t *kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
-  if (!kpage)
-  {
-    return false;
-  }
-  ASSERT (pg_ofs (kpage) == 0);
-  lock_acquire (&cur->spt.lock);
-  struct spte *spte = spt_find (&cur->spt, pte);
-  if (spte)
-  {
-    struct file_meta meta = spte->daddr.file_meta;
-    //TODO may need a file sys lock
-    if (meta.read_bytes > 0)
-    {
-      if (!lock_held_by_current_thread (&filesys_lock))
-      {
-        lock_acquire (&filesys_lock);
-        flag = 1;
-      }
-      read_bytes = file_read_at (meta.file, kpage, meta.read_bytes, meta.offset);
-      if (flag)
-      {
-        lock_release (&filesys_lock);
-      }
-    }
-    if (read_bytes == meta.read_bytes)
-    {
-      update_pte (kpage, pte, (*pte & PTE_FLAGS));
-      lock_release (&cur->spt.lock);
-      return true;
-    }
-  }
-  lock_release (&cur->spt.lock);
-  frame_free_page (kpage);
-  return false;
-}
-
-static bool
-load_page_from_swap (uint32_t *pte)
-{
-  ASSERT (pte != NULL);
-
-  void *kpage = frame_get_page (FRM_USER, pte);
-  
-  struct thread *cur = thread_current ();
-  struct spte *spte = spt_find (&cur->spt, pte);
-  size_t swap_page_no = spte->daddr.swap_addr;
-  ASSERT (swap_page_no != 0);
-
-  swap_read_page (&swap_table, swap_page_no, kpage);
-  swap_free_page (&swap_table, swap_page_no);
-
-  update_pte (kpage, pte, (*pte | PTE_FLAGS)); 
-  return false;
-}
-
-static bool
-stack_growth (void *upage)
-{
-  uint32_t *pte = lookup_page (thread_current()->pagedir, upage, true);
-  void *kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
-  if (kpage == NULL)
-    return false;
-  update_pte (kpage, pte, PTE_U | PTE_P | PTE_W);
-  return true;
-}
