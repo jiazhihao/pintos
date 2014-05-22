@@ -369,8 +369,13 @@ static mapid_t _mmap (int fd, void *addr)
   {
     return -1;
   }
+  struct file * file = thread_get_file (thread_current (), fd);
+  if (!file)
+  {
+    return -1;
+  }
   lock_acquire (&filesys_lock);
-  struct file *file = file_reopen(thread_get_file (thread_current (), fd));
+  file = file_reopen(file);
   lock_release (&filesys_lock);
   if (file == NULL)
   {
@@ -437,7 +442,7 @@ void _munmap (mapid_t mapping)
         write_bytes = size > PGSIZE ? PGSIZE : size;
         if (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U))
         {
-          if (*pte & PTE_P)
+          if ((*pte & PTE_P) && (*pte & PTE_D))
           {
             void *kpage = pte_get_page (*pte);
             lock_acquire (&filesys_lock);
