@@ -13,6 +13,9 @@
 
 extern struct lock filesys_lock;
 
+struct lock pin_lock;
+struct condition pin_cond;
+
 void 
 frame_init (void *base, size_t page_cnt)
 {

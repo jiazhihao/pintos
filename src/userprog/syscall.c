@@ -17,6 +17,9 @@
 #include "vm/swap.h"
 #include "lib/round.h"
 
+extern struct lock pin_lock;
+extern struct condition pin_cond;
+
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
 static uint32_t get_stack_entry (uint32_t *esp, size_t offset);
@@ -437,63 +440,129 @@ static mapid_t _mmap (int fd, void *addr)
   return mapid;
 }
 
+static size_t pin_multiple (void *vaddr, size_t size)
+{
+  struct thread *cur = thread_current ();
+  size_t page_cnt = DIV_ROUND_UP (size, PGSIZE);
+  lock_acquire (&pin_lock);
+  size_t i;
+  void *upage = pg_round_down(vaddr);
+  uint32_t *pte;
+  for (i = 0; i < page_cnt; i++)
+  {
+    pte = lookup_page (cur->pagedir, upage, false);
+    if (!pte)
+    {
+      lock_release (&pin_lock);
+      return i * PGSIZE;
+    }
+    while (*pte & PTE_I)
+    {
+      cond_wait (&pin_cond, &pin_lock);
+    }
+    *pte |= PTE_I;
+    upage += PGSIZE;
+  }
+  lock_release (&pin_lock);
+  return size;
+}
+
+static void unpin_multiple (void *vaddr, size_t size)
+{
+  struct thread *cur = thread_current ();
+  size_t page_cnt = DIV_ROUND_UP (size, PGSIZE);
+  lock_acquire (&pin_lock);
+  size_t i;
+  void *upage = pg_round_down (vaddr);
+  uint32_t *pte;
+  for (i = 0; i < page_cnt; i++)
+  {
+    pte = lookup_page (cur->pagedir, upage, false);
+    if (pte)
+    {
+      *pte &= ~PTE_I;
+    }
+    upage += PGSIZE;
+  }
+  lock_release (&pin_lock);
+}
+
 void _munmap (mapid_t mapping)
 {
   struct thread *cur = thread_current ();
   struct mte *mte = mt_get (cur, mapping);
-  if (mte && (!mte_empty (mte)))
+  uint32_t *pte;
+  void *vaddr;
+  size_t pin_size = 0;
+  if (!mte || mte_empty (mte))
   {
-    uint32_t *pte = lookup_page (cur->pagedir, mte->vaddr, false);
-    ASSERT (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U) && (*pte & PTE_W) && !((*pte & PTE_E)));
-    if (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U))
-    {
-      lock_acquire (&cur->spt.lock);
-      struct spte *spte = spt_find (&cur->spt, pte);
-      if (!spte)
-      {
-        return;
-      }
-      struct file *file = spte->daddr.file_meta.file;
-      if (!file)
-      {
-        spt_delete (&cur->spt, pte);
-        return;
-      }
-      void *vaddr = mte->vaddr;
-      size_t size = mte->size;
-      size_t write_bytes = 0;
-      off_t offset = 0;
-      while (size > 0)
-      {
-        pte = lookup_page (cur->pagedir, vaddr, false);
-        spt_delete (&cur->spt, pte);
-        write_bytes = size > PGSIZE ? PGSIZE : size;
-        if (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U))
-        {
-          if ((*pte & PTE_P) && (*pte & PTE_D))
-          {
-            void *kpage = pte_get_page (*pte);
-            lock_acquire (&filesys_lock);
-            file_write_at (file, kpage, write_bytes, offset);
-            lock_release (&filesys_lock);
-            *pte = 0;
-            frame_free_page (kpage);
-          }
-          else
-          {
-            *pte = 0;
-          }
-        }
-        size -= write_bytes;
-        offset += write_bytes;
-      }
-      lock_acquire (&filesys_lock);
-      file_close (file);
-      lock_release (&filesys_lock);
-      lock_release (&cur->spt.lock);
-    }
-    mt_rm (cur, mapping);
+    return;
   }
+  /* Pin all the mapped pages */
+  pin_size = pin_multiple (mte->vaddr, mte->size);
+  if (pin_size != mte->size)
+  {
+    unpin_multiple (mte->vaddr, pin_size);
+    return;
+  }
+  pte = lookup_page (cur->pagedir, mte->vaddr, false);
+  if (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U))
+  {
+    lock_acquire (&cur->spt.lock);
+    struct spte *spte = spt_find (&cur->spt, pte);
+    lock_release (&cur->spt.lock);
+    if (spte)
+    {
+      struct file *file = spte->daddr.file_meta.file;
+      if (file)
+      {
+        vaddr = mte->vaddr;
+        size_t size = mte->size;
+        size_t write_bytes = 0;
+        off_t offset = 0;
+        /*  */
+        while (size > 0)
+        {
+          pte = lookup_page (cur->pagedir, vaddr, false);
+          write_bytes = size > PGSIZE ? PGSIZE : size;
+          if (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U))
+          {
+            /* Flush all the pages to the disk if neccessary
+            * And free the pages that are still present */
+            if ((*pte & PTE_P) && (*pte & PTE_D))
+            {
+              void *kpage = pte_get_page (*pte);
+              lock_acquire (&filesys_lock);
+              file_write_at (file, kpage, write_bytes, offset);
+              lock_release (&filesys_lock);
+              frame_free_page (kpage);
+            }
+          }
+          vaddr += write_bytes;
+          size -= write_bytes;
+          offset += write_bytes;
+        }
+        lock_acquire (&filesys_lock);
+        file_close (file);
+        lock_release (&filesys_lock);
+      }
+    }
+  }
+  /* delete the spte and set the pte to 0 excepte the pin bit */
+  size_t page_cnt = DIV_ROUND_UP (mte->size, PGSIZE);
+  size_t i; 
+  vaddr = mte->vaddr;
+  lock_acquire (&cur->spt.lock);
+  for (i = 0; i < page_cnt; i++)
+  {
+    pte = lookup_page (cur->pagedir, vaddr, false);
+    spt_delete (&cur->spt, pte);
+    *pte = PTE_I;
+    vaddr += PGSIZE;
+  }
+  lock_release (&cur->spt.lock);
+  mt_rm (cur, mapping);
+  unpin_multiple (mte->vaddr, pin_size);
 }
 
 /* Add a mmap entry to the thread's mmap table.
@@ -714,3 +783,4 @@ stack_growth (void *upage)
   update_pte (kpage, pte, PTE_U | PTE_P | PTE_W);
   return true;
 }
+
