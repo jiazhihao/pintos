@@ -600,7 +600,9 @@ setup_stack (void **esp)
     if (success)
       *esp = PHYS_BASE;
     else
-      palloc_free_page (kpage);
+    {
+      frame_free_page (kpage);
+    }
   }
   return success;
 }

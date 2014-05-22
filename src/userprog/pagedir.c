@@ -86,12 +86,12 @@ pagedir_destroy (uint32_t *pd)
             frame_free_page (pte_get_page (*pte));
           }
           /* Swapped page. */
-          else if (pte && *pte != 0 && !(*pte & PTE_P) && !(*pte & PTE_F))
+          else if (pte && *pte  && !(*pte & PTE_P) && !(*pte & PTE_F))
           {
             free_page_in_swap (pte);
           }
           /* Modified mmap file. */
-          else if (pte && (*pte & PTE_F) && !(*pte & PTE_E) && (*pte & PTE_D))
+          else if (pte && *pte && (*pte & PTE_F) && !(*pte & PTE_E) && (*pte & PTE_D))
           {
             write_page_to_file (pte);
           }

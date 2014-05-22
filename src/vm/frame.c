@@ -76,7 +76,6 @@ clock_hand_increase_one (void)
 
 /* Evict a frame, write back if necessary, update PTE and SPTE.
    Returns free-to-use kpage. */ 
-// TODO (rqi) consider race conditions on frames
 static void *
 evict_and_get_page (enum frame_flags flags)
 {
@@ -90,8 +89,14 @@ evict_and_get_page (enum frame_flags flags)
     fte = &frame_table.frames[frame_table.clock_hand];
     kpage = user_pool.base + frame_table.clock_hand * PGSIZE;
     lock_release (&frame_table.clock_lock);
+    
+    if (!lock_try_acquire (&fte->lock))
+    {
+      clock_hand_increase_one ();
+      continue;
+    }
 
-    lock_acquire (&fte->lock);
+    //lock_acquire (&fte->lock);
     pte = fte->pte;
     /* Case 1: if the page or frame is pinned, skip it.
        fte->pte==NULL means the fte is not yet set (i.e. fte is pinned) */
@@ -164,6 +169,11 @@ evict_and_get_page (enum frame_flags flags)
       continue;
     }
     /* At this point, a evictable frame has been found. */ 
+    /* Reset unpresent bit before flushing to prevent user 
+       from modifying the page. */
+    *pte |= PTE_A;
+    *pte &= ~PTE_P;
+    *pte &= PTE_FLAGS;
 
     /* Case 4: the page is neither accessed nor dirty. swap it! */
     /* Case 4.1: mmaped file. */
@@ -198,10 +208,7 @@ evict_and_get_page (enum frame_flags flags)
     if (!is_mmap_page && has_swap_page)
     {
     }
-
-    *pte |= PTE_A;
-    *pte &= ~PTE_P;
-    *pte &= PTE_FLAGS; 
+ 
     lock_release (&fte->thread->spt.lock);
     fte->thread = NULL;
     fte->pte = NULL; 

@@ -449,7 +449,10 @@ void _munmap (mapid_t mapping)
             file_write_at (file, kpage, write_bytes, offset);
             lock_release (&filesys_lock);
             *pte = 0;
+            // TODO (rqi) more elegant way necessary
+            lock_release (&cur->spt.lock);
             frame_free_page (kpage);
+            lock_acquire (&cur->spt.lock);
           }
           else
           {
@@ -614,7 +617,6 @@ load_page_from_file (uint32_t *pte)
   if (spte)
   {
     struct file_meta meta = spte->daddr.file_meta;
-    //TODO may need a file sys lock
     if (meta.read_bytes > 0)
     {
       lock_acquire (&filesys_lock);
