@@ -650,7 +650,6 @@ _page_fault (void *intr_esp, void *fault_addr)
   struct thread *cur = thread_current ();
   void *fault_page = pg_round_down(fault_addr);
   uint32_t *pte = lookup_page (cur->pagedir, fault_addr, false);
-  bool ret;
   void *esp;
   if (cur->esp == NULL)
     esp = intr_esp;
