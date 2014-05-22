@@ -159,6 +159,8 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+  //printf("page fault at %x\n", fault_addr);
+
   /* syscall::_page_fault pins the page, therefore we need to unpin it after
    * return. The reason we pin the page in _page_fault is because, when
    * kernel tries to access user_memory, we need to pin all user meory pages

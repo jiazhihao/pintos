@@ -82,7 +82,9 @@ unpin (uint32_t *pte)
 {
   ASSERT(pte != NULL);
   ASSERT(*pte & PTE_I);
+  lock_acquire (&pin_lock);
   *pte &= ~PTE_I;
+  lock_release (&pin_lock);
 }
 
 /* Evict a frame, write back if necessary, update PTE and SPTE.
