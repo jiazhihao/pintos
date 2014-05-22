@@ -561,8 +561,8 @@ void _munmap (mapid_t mapping)
     vaddr += PGSIZE;
   }
   lock_release (&cur->spt.lock);
-  mt_rm (cur, mapping);
   unpin_multiple (mte->vaddr, pin_size);
+  mt_rm (cur, mapping);
 }
 
 /* Add a mmap entry to the thread's mmap table.
