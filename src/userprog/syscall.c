@@ -678,7 +678,7 @@ _page_fault (void *intr_esp, void *fault_addr)
        fault_addr == esp - 32 ||
        fault_addr >= esp)
     && fault_addr >= STACK_BOUNDARY
-	&& (pte == NULL || *pte == 0))
+	&& (pte == NULL || *pte == PTE_I))
   {
     return stack_growth(fault_page);
   }
