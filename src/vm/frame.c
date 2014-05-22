@@ -131,7 +131,7 @@ evict_and_get_page (enum frame_flags flags)
       *pte &= ~PTE_A;
       clock_hand_increase_one ();
       lock_release (&fte->lock);
-      unpin(*pte);
+      unpin(pte);
       continue;
     }
     bool is_mmap_page = (*pte & PTE_F) && !(*pte & PTE_E);
@@ -167,7 +167,7 @@ evict_and_get_page (enum frame_flags flags)
           if (spte == NULL) {
             lock_release (&fte->thread->spt.lock);
             lock_release (&fte->lock);
-            unpin(*pte);
+            unpin(pte);
             _exit (-1);
           }
         }
@@ -187,7 +187,7 @@ evict_and_get_page (enum frame_flags flags)
       clock_hand_increase_one ();
       lock_release (&fte->thread->spt.lock);
       lock_release (&fte->lock);
-      unpin(*pte);
+      unpin(pte);
       continue;
     }
     /* At this point, a evictable frame has been found. */ 
@@ -216,7 +216,7 @@ evict_and_get_page (enum frame_flags flags)
         if (spte == NULL) {
           lock_release (&fte->thread->spt.lock);
           lock_release (&fte->lock);
-          unpin(*pte);
+          unpin(pte);
           _exit (-1);
         }
       }
@@ -234,7 +234,7 @@ evict_and_get_page (enum frame_flags flags)
     fte->thread = NULL;
     fte->pte = NULL; 
     lock_release (&fte->lock);
-    unpin(*pte);
+    unpin(pte);
     if (flags & FRM_ZERO)
       memset (kpage, 0, PGSIZE);
     return kpage;

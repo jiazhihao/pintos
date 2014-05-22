@@ -271,7 +271,7 @@ _write (int fd, const void *buffer, unsigned size)
   {
     putbuf (buffer, size);
     ret = size;
-    got _write_finish;
+    goto _write_finish;
   }
 
   struct file *f = thread_get_file (thread_current (), fd);
@@ -467,7 +467,7 @@ static size_t pin_multiple (void *vaddr, size_t size)
   return size;
 }
 
-static void unpin_multiple (void *vaddr, size_t size)
+void unpin_multiple (const void *vaddr, size_t size)
 {
   struct thread *cur = thread_current ();
   size_t page_cnt = DIV_ROUND_UP (size, PGSIZE);
@@ -671,7 +671,7 @@ _page_fault (void *intr_esp, void *fault_addr)
 
   if (pte && (*pte & PTE_P))
   {
-    return = false;
+    return false;
   }
 
   /* Case 1: Stack Growth */
