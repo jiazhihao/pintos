@@ -106,8 +106,10 @@ start_process (void *aux)
      keep it open during the process lifetime. */
   if (success)
   {
+    lock_acquire (&filesys_lock);
     cur->exec_file = filesys_open (file_name);
     file_deny_write (cur->exec_file);
+    lock_release (&filesys_lock);
   }
 
   /* If load failed, quit. */
@@ -185,8 +187,10 @@ process_exit (void)
   /* Re-enable write to exec_file */
   if (cur->exec_file)
   {
+    lock_acquire (&filesys_lock);
     file_allow_write (cur->exec_file);
     file_close (cur->exec_file);
+    lock_release (&filesys_lock);
   }
 
   /*Close all files opened by current process*/
@@ -522,7 +526,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   /* To prevent deadlock, must not hold filesys_lock 
      before acquiring spt.lock. */
   ASSERT (!lock_held_by_current_thread (&filesys_lock));
-  
   struct thread *cur = thread_current ();
   while (read_bytes > 0 || zero_bytes > 0)
   {
