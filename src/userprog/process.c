@@ -227,6 +227,7 @@ process_exit (void)
     pagedir_activate (NULL);
     pagedir_destroy (pd);
   }
+  /* Must destroy spt after pagedir_destroy (pd). */
   spt_destroy (&cur->spt);
   if (cur->is_user)
     printf ("%s: exit(%d)\n", cur->name, cur->exit_value);
@@ -416,9 +417,14 @@ load (const char *file_name, void (**eip) (void), void **esp)
           read_bytes = 0;
           zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
         }
+        lock_release (&filesys_lock);
         if (!load_segment (file, file_page, (void *)mem_page,
                            read_bytes, zero_bytes, writable, true))
+        {
+          lock_acquire (&filesys_lock);
           goto done;
+        }
+        lock_acquire (&filesys_lock);
       }
       else
         goto done;
@@ -513,7 +519,10 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
   uint8_t *input_page = upage;
-  file_seek (file, ofs);
+  /* To prevent deadlock, must not hold filesys_lock 
+     before acquiring spt.lock. */
+  ASSERT (!lock_held_by_current_thread (&filesys_lock));
+  
   struct thread *cur = thread_current ();
   while (read_bytes > 0 || zero_bytes > 0)
   {
@@ -540,7 +549,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     union daddr daddr;
     daddr.file_meta.file = file;
     daddr.file_meta.offset = ofs;
-    daddr.file_meta.read_bytes = page_read_bytes;
+    daddr.file_meta.read_bytes = page_read_bytes; 
     lock_acquire (&cur->spt.lock);
     if (!spt_insert (&cur->spt, pte, &daddr))
     {
@@ -564,6 +573,7 @@ fail:
     {
       spt_delete (&cur->spt, lookup_page (cur->pagedir, upage, false));
     }
+    lock_release (&cur->spt.lock);
   }
   return false;
 }

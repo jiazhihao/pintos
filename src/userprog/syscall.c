@@ -574,7 +574,7 @@ _page_fault (void *intr_esp, void *fault_addr)
   }
 
   /* Case 3: page in swap block. */
-  if (pte && *pte != 0 && !(*pte && PTE_P) && !(*pte && PTE_F))
+  if (pte && *pte != 0 && !(*pte & PTE_P) && !(*pte & PTE_F))
   {
     return load_page_from_swap (pte);
   }
@@ -650,7 +650,7 @@ load_page_from_swap (uint32_t *pte)
   spt_delete (&cur->spt, pte);
   lock_release (&cur->spt.lock);
   
-  update_pte (kpage, pte, (*pte | PTE_FLAGS));
+  update_pte (kpage, pte, (*pte & PTE_FLAGS));
   return true;
 }
 

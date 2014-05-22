@@ -12,6 +12,7 @@
 #include "filesys/file.h"
 
 extern struct lock filesys_lock;
+//int debug_cnt = 0; // TODO (rqi) to remove
 
 void 
 frame_init (void *base, size_t page_cnt)
@@ -84,22 +85,30 @@ evict_and_get_page (enum frame_flags flags)
   uint32_t *pte;
   struct spte *spte;
   void *kpage;
-
+  //printf("Eviction Number: %d\n", debug_cnt++);
   while (1) 
   {
     lock_acquire (&frame_table.clock_lock); 
     fte = &frame_table.frames[frame_table.clock_hand];
     kpage = user_pool.base + frame_table.clock_hand * PGSIZE;
+    // DEBUG BEG
+    //printf ("clock_hand: %u\n", frame_table.clock_hand);
+    //size_t page_idx = pg_no (kpage) - pg_no (user_pool.base);
+    //ASSERT (frame_table.clock_hand == page_idx);
+    //printf ("frames[%u].pte = %x\n", page_idx, fte->pte);
+    // DEBUG END
     lock_release (&frame_table.clock_lock);
 
     lock_acquire (&fte->lock);
     pte = fte->pte;
-    ASSERT ((fte->thread != NULL));    
-
+    //printf ("fte->pte: %x, pte: %x\n", fte->pte, pte);
     /* Case 1: if the page or frame is pinned, skip it.
        fte->pte==NULL means the fte is not yet set (i.e. fte is pinned) */
     if ((pte == NULL) || (*pte & PTE_I))
     {
+      //printf ("EV Case 1.\n");
+      //if (pte)
+        //printf ("*pte: %x\n", *pte);
       clock_hand_increase_one ();
       lock_release (&fte->lock);
       continue;
@@ -107,6 +116,7 @@ evict_and_get_page (enum frame_flags flags)
     /* Case 2: if the page is accessed recently, reset access bit and skip it. */
     if (*pte & PTE_A)
     {
+      //printf ("EV Case 2\n");
       *pte &= ~PTE_A;
       clock_hand_increase_one ();
       lock_release (&fte->lock);
@@ -114,6 +124,7 @@ evict_and_get_page (enum frame_flags flags)
     }
     bool is_mmap_page = (*pte & PTE_F) && !(*pte & PTE_E);
     bool is_exec_page = (*pte & PTE_F) && (*pte & PTE_E);
+    ASSERT (fte->thread != NULL);    
     lock_acquire (&fte->thread->spt.lock);
     spte = spt_find (&fte->thread->spt, pte);
     bool has_swap_page = !(*pte & PTE_F) && (spte != NULL);
@@ -123,6 +134,7 @@ evict_and_get_page (enum frame_flags flags)
       /* Case 3.1: mmaped file. */
       if (is_mmap_page)
       {
+        //printf ("EV Case 3.1\n");
         spte = spt_find (&fte->thread->spt, pte);
         ASSERT ((spte != NULL) && (spte->daddr.file_meta.file != NULL));
         struct file_meta *fm = &spte->daddr.file_meta;
@@ -133,6 +145,7 @@ evict_and_get_page (enum frame_flags flags)
       /* Case 3.2: exec. file or non-file. without swap_page*/
       if (!is_mmap_page && !has_swap_page)
       {
+        //printf ("EV Case 3.2\n");
         size_t swap_page_no = swap_get_page (&swap_table);
         swap_write_page (&swap_table, swap_page_no, kpage);
         spte = spt_find (&fte->thread->spt, pte);
@@ -155,6 +168,7 @@ evict_and_get_page (enum frame_flags flags)
       /* Case 3.3: exec. file or non-file with swap_page */
       if (!is_mmap_page && has_swap_page)
       {
+        //printf ("EV Case 3.3\n");
         spte = spt_find (&fte->thread->spt, pte);
         ASSERT ((spte != NULL) && (spte->daddr.swap_addr != 0));
         swap_write_page (&swap_table, spte->daddr.swap_addr, kpage);  
@@ -171,15 +185,18 @@ evict_and_get_page (enum frame_flags flags)
     /* Case 4.1: mmaped file. */
     if (is_mmap_page)
     {
+      //printf ("EV: Case 4.1\n");
     }
     /* Case 4.2: exec. file or non-file. without swap_page*/
     /* Case 4.2.1: exec. file. No need to write back. */
     if (!is_mmap_page && is_exec_page && !has_swap_page)
     {
+      //printf ("EV: Case 4.2.1\n");
     }
     /* Case 4.2.2: non-file. Write to swap. */
     if (!is_mmap_page && !is_exec_page && !has_swap_page)
     {
+      //printf ("EV: Case 4.2.2\n");
       size_t swap_page_no = swap_get_page (&swap_table);
       swap_write_page (&swap_table, swap_page_no, kpage);
       spte = spt_find (&fte->thread->spt, pte);
@@ -199,15 +216,19 @@ evict_and_get_page (enum frame_flags flags)
     /* Case 4.3: exec. file or non-file with swap_page */
     if (!is_mmap_page && has_swap_page)
     {
+      //printf ("EV: Case 4.3\n");
     }
 
     *pte |= PTE_A;
     *pte &= ~PTE_P;
     *pte &= PTE_FLAGS; 
+    lock_release (&fte->thread->spt.lock);
     fte->thread = NULL;
     fte->pte = NULL; 
-    lock_release (&fte->thread->spt.lock);
     lock_release (&fte->lock);
+    // DEBUG BEG
+    //printf("Eviction Complete with kpage idx: %u.\n", page_idx);
+    // DEBUG END
     if (flags & FRM_ZERO)
       memset (kpage, 0, PGSIZE);
     return kpage;
@@ -234,6 +255,7 @@ frame_get_page (enum frame_flags flags, uint32_t *pte)
   lock_acquire (&frame_table.frames[page_idx].lock);
   frame_table.frames[page_idx].thread = t;
   frame_table.frames[page_idx].pte = pte;
+  //printf ("Has set frames[%u].pte to %x\n", page_idx, pte);
   lock_release (&frame_table.frames[page_idx].lock);
 
   return kpage;

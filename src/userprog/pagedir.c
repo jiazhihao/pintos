@@ -6,6 +6,12 @@
 #include "threads/pte.h"
 #include "threads/palloc.h"
 #include "vm/frame.h"
+#include "vm/page.h"
+#include "vm/swap.h"
+#include "filesys/file.h"
+#include "threads/pte.h"
+
+extern struct lock filesys_lock;
 
 static uint32_t *active_pd (void);
 static void invalidate_pagedir (uint32_t *);
@@ -21,6 +27,38 @@ pagedir_create (void)
   if (pd != NULL)
     memcpy (pd, init_page_dir, PGSIZE);
   return pd;
+}
+
+static void
+free_page_in_swap (uint32_t *pte)
+{
+  ASSERT (pte != NULL);
+  struct thread *cur = thread_current();
+  lock_acquire (&cur->spt.lock);
+  struct spte *spte = spt_find (&cur->spt, pte);
+  ASSERT ((spte != NULL) && (spte->daddr.swap_addr != 0));
+  size_t swap_page_no = spte->daddr.swap_addr;
+  swap_free_page (&swap_table, swap_page_no);
+  spt_delete (&cur->spt, pte);
+  lock_release (&cur->spt.lock);
+}
+
+static void
+write_page_to_file (uint32_t *pte)
+{
+  ASSERT (pte != NULL && (*pte & PTE_F));
+  struct thread *cur = thread_current();
+  lock_acquire (&cur->spt.lock);
+  struct spte *spte = spt_find (&cur->spt, pte);
+  ASSERT ((spte != NULL) && (spte->daddr.file_meta.file != NULL));
+  struct file_meta *fm = &spte->daddr.file_meta;
+  lock_acquire (&filesys_lock);
+  void *kpage = pte_get_page (*pte);
+  file_write_at (fm->file, kpage, fm->read_bytes, fm->offset);
+  lock_release (&filesys_lock);
+  spt_delete (&cur->spt, pte);
+  lock_release (&cur->spt.lock);
+  
 }
 
 /* Destroys page directory PD, freeing all the pages it
@@ -42,13 +80,20 @@ pagedir_destroy (uint32_t *pd)
         
         for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
         {
+          /* Present page. */
           if (*pte & PTE_P) 
           {
             frame_free_page (pte_get_page (*pte));
           }
-          else
+          /* Swapped page. */
+          else if (pte && *pte != 0 && !(*pte & PTE_P) && !(*pte & PTE_F))
           {
-            // TODO (rqi) release swap resources 
+            free_page_in_swap (pte);
+          }
+          /* Modified mmap file. */
+          else if (pte && (*pte & PTE_F) && !(*pte & PTE_E) && (*pte & PTE_D))
+          {
+            write_page_to_file (pte);
           }
         }
         palloc_free_page (pt);
