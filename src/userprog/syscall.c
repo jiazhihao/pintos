@@ -17,6 +17,9 @@
 #include "vm/swap.h"
 #include "lib/round.h"
 
+extern struct lock pin_lock;
+extern struct condition pin_cond;
+
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
 static uint32_t get_stack_entry (uint32_t *esp, size_t offset);
@@ -204,11 +207,18 @@ _wait (int pid)
 static int
 _read (int fd, void *buffer, unsigned size)
 {
+  int ret;
   if (!check_user_memory (buffer, size, true))
+  {
+    unpin_multiple (buffer, size);
     _exit (-1);
+  }
 
   if (fd == STDOUT_FILENO)
-    return -1;
+  {
+    ret = -1;
+    goto _read_finish;
+  }
 
   if (fd == STDIN_FILENO)
   {
@@ -216,53 +226,74 @@ _read (int fd, void *buffer, unsigned size)
     uint8_t *char_buf = (uint8_t *)buffer;
     for (i = 0; i < size; i++)
       char_buf[i] = input_getc ();
-    return size;
+    ret = size;
+    goto _read_finish;
   }
 
   struct file *f = thread_get_file (thread_current (), fd);
   if (f == NULL)
   {
-    return -1;
+    ret = -1;
+    goto _read_finish;
   }
   else
   {
     lock_acquire (&filesys_lock);
     int result = file_read (f, buffer, size);
     lock_release (&filesys_lock);
-    return result;
+    ret = result;
+    goto _read_finish;
   }
+
+_read_finish:
+  unpin_multiple (buffer, size);
+  return ret;
 }
 
 
 static int
 _write (int fd, const void *buffer, unsigned size)
 {
+  int ret;
   if (!check_user_memory (buffer, size, false))
+  {
+    unpin_multiple (buffer, size);
     _exit (-1);
+  }
 
   if (fd == STDIN_FILENO)
-    return -1;
+  {
+    ret = -1;
+    goto _write_finish;
+  }
 
   if (fd == STDOUT_FILENO)
   {
     putbuf (buffer, size);
-    return size;
+    ret = size;
+    got _write_finish;
   }
 
   struct file *f = thread_get_file (thread_current (), fd);
   if (f == NULL)
   {
-    return -1;
+    ret = -1;
+    goto _write_finish;
   }
   else
   {
     lock_acquire (&filesys_lock);
     int result = file_write (f, buffer, size);
     lock_release (&filesys_lock);
-    return result;
+    ret = result;
+    goto _write_finish;
   }
 
-  return 0;
+  ret = 0;
+
+_write_finish:
+  unpin_multiple (buffer, size);
+  return ret;
 }
 
 static pid_t
@@ -409,66 +440,129 @@ static mapid_t _mmap (int fd, void *addr)
   return mapid;
 }
 
+static size_t pin_multiple (void *vaddr, size_t size)
+{
+  struct thread *cur = thread_current ();
+  size_t page_cnt = DIV_ROUND_UP (size, PGSIZE);
+  lock_acquire (&pin_lock);
+  size_t i;
+  void *upage = pg_round_down(vaddr);
+  uint32_t *pte;
+  for (i = 0; i < page_cnt; i++)
+  {
+    pte = lookup_page (cur->pagedir, upage, false);
+    if (!pte)
+    {
+      lock_release (&pin_lock);
+      return i * PGSIZE;
+    }
+    while (*pte & PTE_I)
+    {
+      cond_wait (&pin_cond, &pin_lock);
+    }
+    *pte |= PTE_I;
+    upage += PGSIZE;
+  }
+  lock_release (&pin_lock);
+  return size;
+}
+
+static void unpin_multiple (void *vaddr, size_t size)
+{
+  struct thread *cur = thread_current ();
+  size_t page_cnt = DIV_ROUND_UP (size, PGSIZE);
+  lock_acquire (&pin_lock);
+  size_t i;
+  void *upage = pg_round_down (vaddr);
+  uint32_t *pte;
+  for (i = 0; i < page_cnt; i++)
+  {
+    pte = lookup_page (cur->pagedir, upage, false);
+    if (pte)
+    {
+      *pte &= ~PTE_I;
+    }
+    upage += PGSIZE;
+  }
+  lock_release (&pin_lock);
+}
+
 void _munmap (mapid_t mapping)
 {
   struct thread *cur = thread_current ();
   struct mte *mte = mt_get (cur, mapping);
-  if (mte && (!mte_empty (mte)))
+  uint32_t *pte;
+  void *vaddr;
+  size_t pin_size = 0;
+  if (!mte || mte_empty (mte))
   {
-    uint32_t *pte = lookup_page (cur->pagedir, mte->vaddr, false);
-    ASSERT (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U) && (*pte & PTE_W) && !((*pte & PTE_E)));
-    if (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U))
-    {
-      lock_acquire (&cur->spt.lock);
-      struct spte *spte = spt_find (&cur->spt, pte);
-      if (!spte)
-      {
-        return;
-      }
-      struct file *file = spte->daddr.file_meta.file;
-      if (!file)
-      {
-        spt_delete (&cur->spt, pte);
-        return;
-      }
-      void *vaddr = mte->vaddr;
-      size_t size = mte->size;
-      size_t write_bytes = 0;
-      off_t offset = 0;
-      while (size > 0)
-      {
-        pte = lookup_page (cur->pagedir, vaddr, false);
-        spt_delete (&cur->spt, pte);
-        write_bytes = size > PGSIZE ? PGSIZE : size;
-        if (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U))
-        {
-          if ((*pte & PTE_P) && (*pte & PTE_D))
-          {
-            void *kpage = pte_get_page (*pte);
-            lock_acquire (&filesys_lock);
-            file_write_at (file, kpage, write_bytes, offset);
-            lock_release (&filesys_lock);
-            *pte = 0;
-            // TODO (rqi) more elegant way necessary
-            lock_release (&cur->spt.lock);
-            frame_free_page (kpage);
-            lock_acquire (&cur->spt.lock);
-          }
-          else
-          {
-            *pte = 0;
-          }
-        }
-        size -= write_bytes;
-        offset += write_bytes;
-      }
-      lock_acquire (&filesys_lock);
-      file_close (file);
-      lock_release (&filesys_lock);
-      lock_release (&cur->spt.lock);
-    }
-    mt_rm (cur, mapping);
+    return;
   }
+  /* Pin all the mapped pages */
+  pin_size = pin_multiple (mte->vaddr, mte->size);
+  if (pin_size != mte->size)
+  {
+    unpin_multiple (mte->vaddr, pin_size);
+    return;
+  }
+  pte = lookup_page (cur->pagedir, mte->vaddr, false);
+  if (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U))
+  {
+    lock_acquire (&cur->spt.lock);
+    struct spte *spte = spt_find (&cur->spt, pte);
+    lock_release (&cur->spt.lock);
+    if (spte)
+    {
+      struct file *file = spte->daddr.file_meta.file;
+      if (file)
+      {
+        vaddr = mte->vaddr;
+        size_t size = mte->size;
+        size_t write_bytes = 0;
+        off_t offset = 0;
+        /*  */
+        while (size > 0)
+        {
+          pte = lookup_page (cur->pagedir, vaddr, false);
+          write_bytes = size > PGSIZE ? PGSIZE : size;
+          if (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U))
+          {
+            /* Flush all the pages to the disk if neccessary
+            * And free the pages that are still present */
+            if ((*pte & PTE_P) && (*pte & PTE_D))
+            {
+              void *kpage = pte_get_page (*pte);
+              lock_acquire (&filesys_lock);
+              file_write_at (file, kpage, write_bytes, offset);
+              lock_release (&filesys_lock);
+              frame_free_page (kpage);
+            }
+          }
+          vaddr += write_bytes;
+          size -= write_bytes;
+          offset += write_bytes;
+        }
+        lock_acquire (&filesys_lock);
+        file_close (file);
+        lock_release (&filesys_lock);
+      }
+    }
+  }
+  /* delete the spte and set the pte to 0 excepte the pin bit */
+  size_t page_cnt = DIV_ROUND_UP (mte->size, PGSIZE);
+  size_t i; 
+  vaddr = mte->vaddr;
+  lock_acquire (&cur->spt.lock);
+  for (i = 0; i < page_cnt; i++)
+  {
+    pte = lookup_page (cur->pagedir, vaddr, false);
+    spt_delete (&cur->spt, pte);
+    *pte = PTE_I;
+    vaddr += PGSIZE;
+  }
+  lock_release (&cur->spt.lock);
+  mt_rm (cur, mapping);
+  unpin_multiple (mte->vaddr, pin_size);
 }
 
 /* Add a mmap entry to the thread's mmap table.
@@ -556,18 +650,31 @@ _page_fault (void *intr_esp, void *fault_addr)
   struct thread *cur = thread_current ();
   void *fault_page = pg_round_down(fault_addr);
   uint32_t *pte = lookup_page (cur->pagedir, fault_addr, false);
-
-  if (pte && (*pte & PTE_P))
-  {
-    return false;
-  }
-
-  /* Case 1: Stack Growth */
+  bool ret;
   void *esp;
   if (cur->esp == NULL)
     esp = intr_esp;
   else
     esp = cur->esp;
+
+  /* If we experience page fault on pte, pin it since we need to prevent others from
+   * accessing this page when we are handling page fault. */
+  lock_acquire(&pin_lock);
+  if (pte != NULL) {
+    while (*pte & PTE_I)
+    {
+      cond_wait(&pin_cond, &pin_lock);
+    }
+    *pte |= PTE_I;
+  }
+  lock_release(&pin_lock);
+
+  if (pte && (*pte & PTE_P))
+  {
+    return = false;
+  }
+
+  /* Case 1: Stack Growth */
   if ((fault_addr == esp - 4 ||
        fault_addr == esp - 32 ||
        fault_addr >= esp)
@@ -596,6 +703,7 @@ static void
 update_pte (void *kpage, uint32_t *pte, uint32_t flags)
 {
   ASSERT (!(*pte & PTE_P));
+  ASSERT(*pte & PTE_I);
   *pte = vtop (kpage) | flags;
   *pte |= PTE_P;
 }
@@ -603,6 +711,7 @@ update_pte (void *kpage, uint32_t *pte, uint32_t flags)
 static bool
 load_page_from_file (uint32_t *pte)
 {
+  ASSERT(*pte & PTE_I);
   size_t read_bytes = 0;
   ASSERT (*pte & PTE_F);
   struct thread *cur = thread_current ();
@@ -639,7 +748,7 @@ static bool
 load_page_from_swap (uint32_t *pte)
 {
   ASSERT (pte != NULL);
-
+  ASSERT(*pte & PTE_I);
   void *kpage = frame_get_page (FRM_USER, pte);
   if (!kpage)
   {
@@ -673,3 +782,4 @@ stack_growth (void *upage)
   update_pte (kpage, pte, PTE_U | PTE_P | PTE_W);
   return true;
 }
+

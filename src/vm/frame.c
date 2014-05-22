@@ -13,6 +13,9 @@
 
 extern struct lock filesys_lock;
 
+struct lock pin_lock;
+struct condition pin_cond;
+
 void 
 frame_init (void *base, size_t page_cnt)
 {
@@ -74,6 +77,14 @@ clock_hand_increase_one (void)
   lock_release (&frame_table.clock_lock); 
 }
 
+static void
+unpin (uint32_t *pte)
+{
+  ASSERT(pte != NULL);
+  ASSERT(*pte & PTE_I);
+  *pte &= ~PTE_I;
+}
+
 /* Evict a frame, write back if necessary, update PTE and SPTE.
    Returns free-to-use kpage. */ 
 static void *
@@ -98,20 +109,34 @@ evict_and_get_page (enum frame_flags flags)
 
     //lock_acquire (&fte->lock);
     pte = fte->pte;
-    /* Case 1: if the page or frame is pinned, skip it.
-       fte->pte==NULL means the fte is not yet set (i.e. fte is pinned) */
-    if ((pte == NULL) || (*pte & PTE_I))
+    /* Case 1.1:  fte->pte==NULL means the fte is not yet set (i.e. fte
+     * is pinned), skip it. */
+    if (pte == NULL)
     {
       clock_hand_increase_one ();
       lock_release (&fte->lock);
       continue;
     }
+    /* Case 1.2: if the page is pinned, skip it. */
+    lock_acquire (&pin_lock);
+    if (*pte & PTE_I)
+    {
+      clock_hand_increase_one ();
+      lock_release (&pin_lock);
+      lock_release (&fte->lock);
+      continue;
+    }
+    /* Since we are considering to evict this page, pin it for now to avoid
+     * race condition. Unpin it before skip to next frame. */
+    *pte |= PTE_I;
+    lock_release (&pin_lock);
     /* Case 2: if the page is accessed recently, reset access bit and skip it. */
     if (*pte & PTE_A)
     {
       *pte &= ~PTE_A;
       clock_hand_increase_one ();
       lock_release (&fte->lock);
+      unpin(*pte);
       continue;
     }
     bool is_mmap_page = (*pte & PTE_F) && !(*pte & PTE_E);
@@ -147,6 +172,7 @@ evict_and_get_page (enum frame_flags flags)
           if (spte == NULL) {
             lock_release (&fte->thread->spt.lock);
             lock_release (&fte->lock);
+            unpin(*pte);
             _exit (-1);
           }
         }
@@ -166,6 +192,7 @@ evict_and_get_page (enum frame_flags flags)
       clock_hand_increase_one ();
       lock_release (&fte->thread->spt.lock);
       lock_release (&fte->lock);
+      unpin(*pte);
       continue;
     }
     /* At this point, a evictable frame has been found. */ 
@@ -199,6 +226,7 @@ evict_and_get_page (enum frame_flags flags)
         if (spte == NULL) {
           lock_release (&fte->thread->spt.lock);
           lock_release (&fte->lock);
+          unpin(*pte);
           _exit (-1);
         }
       }
@@ -213,6 +241,7 @@ evict_and_get_page (enum frame_flags flags)
     fte->thread = NULL;
     fte->pte = NULL; 
     lock_release (&fte->lock);
+    unpin(*pte);
     if (flags & FRM_ZERO)
       memset (kpage, 0, PGSIZE);
     return kpage;
