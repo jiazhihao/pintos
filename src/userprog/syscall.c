@@ -204,11 +204,18 @@ _wait (int pid)
 static int
 _read (int fd, void *buffer, unsigned size)
 {
+  int ret;
   if (!check_user_memory (buffer, size, true))
+  {
+    unpin_multiple (buffer, size);
     _exit (-1);
+  }
 
   if (fd == STDOUT_FILENO)
-    return -1;
+  {
+    ret = -1;
+    goto _read_finish;
+  }
 
   if (fd == STDIN_FILENO)
   {
@@ -216,53 +223,74 @@ _read (int fd, void *buffer, unsigned size)
     uint8_t *char_buf = (uint8_t *)buffer;
     for (i = 0; i < size; i++)
       char_buf[i] = input_getc ();
-    return size;
+    ret = size;
+    goto _read_finish;
   }
 
   struct file *f = thread_get_file (thread_current (), fd);
   if (f == NULL)
   {
-    return -1;
+    ret = -1;
+    goto _read_finish;
   }
   else
   {
     lock_acquire (&filesys_lock);
     int result = file_read (f, buffer, size);
     lock_release (&filesys_lock);
-    return result;
+    ret = result;
+    goto _read_finish;
   }
+
+_read_finish:
+  unpin_multiple (buffer, size);
+  return ret;
 }
 
 
 static int
 _write (int fd, const void *buffer, unsigned size)
 {
+  int ret;
   if (!check_user_memory (buffer, size, false))
+  {
+    unpin_multiple (buffer, size);
     _exit (-1);
+  }
 
   if (fd == STDIN_FILENO)
-    return -1;
+  {
+    ret = -1;
+    goto _write_finish;
+  }
 
   if (fd == STDOUT_FILENO)
   {
     putbuf (buffer, size);
-    return size;
+    ret = size;
+    got _write_finish;
   }
 
   struct file *f = thread_get_file (thread_current (), fd);
   if (f == NULL)
   {
-    return -1;
+    ret = -1;
+    goto _write_finish;
   }
   else
   {
     lock_acquire (&filesys_lock);
     int result = file_write (f, buffer, size);
     lock_release (&filesys_lock);
-    return result;
+    ret = result;
+    goto _write_finish;
   }
 
-  return 0;
+  ret = 0;
+
+_write_finish:
+  unpin_multiple (buffer, size);
+  return ret;
 }
 
 static pid_t
@@ -553,18 +581,31 @@ _page_fault (void *intr_esp, void *fault_addr)
   struct thread *cur = thread_current ();
   void *fault_page = pg_round_down(fault_addr);
   uint32_t *pte = lookup_page (cur->pagedir, fault_addr, false);
-
-  if (pte && (*pte & PTE_P))
-  {
-    return false;
-  }
-
-  /* Case 1: Stack Growth */
+  bool ret;
   void *esp;
   if (cur->esp == NULL)
     esp = intr_esp;
   else
     esp = cur->esp;
+
+  /* If we experience page fault on pte, pin it since we need to prevent others from
+   * accessing this page when we are handling page fault. */
+  lock_acquire(&pin_lock);
+  if (pte != NULL) {
+    while (*pte & PTE_I)
+    {
+      cond_wait(&pin_cond, &pin_lock);
+    }
+    *pte |= PTE_I;
+  }
+  lock_release(&pin_lock);
+
+  if (pte && (*pte & PTE_P))
+  {
+    return = false;
+  }
+
+  /* Case 1: Stack Growth */
   if ((fault_addr == esp - 4 ||
        fault_addr == esp - 32 ||
        fault_addr >= esp)
@@ -593,6 +634,7 @@ static void
 update_pte (void *kpage, uint32_t *pte, uint32_t flags)
 {
   ASSERT (!(*pte & PTE_P));
+  ASSERT(*pte & PTE_I);
   *pte = vtop (kpage) | flags;
   *pte |= PTE_P;
 }
@@ -600,6 +642,7 @@ update_pte (void *kpage, uint32_t *pte, uint32_t flags)
 static bool
 load_page_from_file (uint32_t *pte)
 {
+  ASSERT(*pte & PTE_I);
   size_t read_bytes = 0;
   ASSERT (*pte & PTE_F);
   struct thread *cur = thread_current ();
@@ -637,7 +680,7 @@ static bool
 load_page_from_swap (uint32_t *pte)
 {
   ASSERT (pte != NULL);
-
+  ASSERT(*pte & PTE_I);
   void *kpage = frame_get_page (FRM_USER, pte);
   if (!kpage)
   {
