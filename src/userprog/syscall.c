@@ -684,13 +684,13 @@ _page_fault (void *intr_esp, void *fault_addr)
   }
 
   /* Case 2: executable file */
-  if (pte && (*pte & PTE_F))
+  if (pte && (*pte & PTE_U) && (*pte & PTE_F))
   {
     return load_page_from_file (pte);
   }
 
   /* Case 3: page in swap block. */
-  if (pte && *pte != 0 && !(*pte & PTE_P) && !(*pte & PTE_F))
+  if (pte && (*pte & PTE_U) && !(*pte & PTE_P) && !(*pte & PTE_F))
   {
     return load_page_from_swap (pte);
   }
