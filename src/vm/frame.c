@@ -59,9 +59,7 @@ frame_free_multiple (void *pages, size_t page_cnt)
     lock_release (&frame_table.frames[i].lock);
   }
 
-  printf("PFM Started.\n");
   palloc_free_multiple (pages, page_cnt);
-  printf("PFM Compelted.\n");
 }
 
 void
@@ -167,6 +165,7 @@ evict_and_get_page (enum frame_flags flags)
         file_write_at (fm->file, kpage, fm->read_bytes, fm->offset);
         lock_release (&filesys_lock);
       }
+      // TODO (rqi) for simplicity combine three swap cases to 1.
       /* Case 3.2: exec. file or non-file. without swap_page*/
       if (!is_mmap_page && !has_swap_page)
       {

@@ -46,24 +46,6 @@ free_page_in_swap (uint32_t *pte)
   lock_release (&cur->spt.lock);
 }
 
-static void
-write_page_to_file (uint32_t *pte)
-{
-  ASSERT (pte != NULL && (*pte & PTE_F));
-  struct thread *cur = thread_current();
-  lock_acquire (&cur->spt.lock);
-  struct spte *spte = spt_find (&cur->spt, pte);
-  ASSERT ((spte != NULL) && (spte->daddr.file_meta.file != NULL));
-  struct file_meta *fm = &spte->daddr.file_meta;
-  lock_acquire (&filesys_lock);
-  void *kpage = pte_get_page (*pte);
-  file_write_at (fm->file, kpage, fm->read_bytes, fm->offset);
-  lock_release (&filesys_lock);
-  spt_delete (&cur->spt, pte);
-  lock_release (&cur->spt.lock);
-  
-}
-
 /* Destroys page directory PD, freeing all the pages it
    references. */
 void
@@ -98,19 +80,12 @@ pagedir_destroy (uint32_t *pd)
           /* Present page. */
           if (*pte & PTE_P) 
           {
-            printf ("FFP in pagedir Started.\n");
             frame_free_page (pte_get_page (*pte));
-            printf ("FFP in pagedir Completed.\n");
           }
           /* Swapped page. */
           else if (pte && (*pte & PTE_U)  && !(*pte & PTE_P) && !(*pte & PTE_F))
           {
             free_page_in_swap (pte);
-          }
-          /* Modified mmap file. */
-          else if (pte && (*pte & PTE_U) && (*pte & PTE_F) && !(*pte & PTE_E) && (*pte & PTE_D))
-          {
-            write_page_to_file (pte);
           }
           lock_acquire (&pin_lock);
           *pte &= ~PTE_I;
