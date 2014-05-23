@@ -59,9 +59,9 @@ frame_free_multiple (void *pages, size_t page_cnt)
     lock_release (&frame_table.frames[i].lock);
   }
 
-  printf("PFM Started.\n");
+  //printf("PFM Started.\n");
   palloc_free_multiple (pages, page_cnt);
-  printf("PFM Compelted.\n");
+  //printf("PFM Compelted.\n");
 }
 
 void
@@ -85,6 +85,7 @@ unpin (uint32_t *pte)
   ASSERT(*pte & PTE_I);
   lock_acquire (&pin_lock);
   *pte &= ~PTE_I;
+  cond_broadcast (&pin_cond, &pin_lock);
   lock_release (&pin_lock);
 }
 

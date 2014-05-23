@@ -112,6 +112,7 @@ pagedir_destroy (uint32_t *pd)
           }
           lock_acquire (&pin_lock);
           *pte &= ~PTE_I;
+          cond_broadcast (&pin_cond, &pin_lock);
           lock_release (&pin_lock);
         }
         palloc_free_page (pt);

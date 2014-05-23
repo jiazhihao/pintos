@@ -12,5 +12,6 @@ bool _page_fault (void *intr_esp, void *fault_addr);
 void _munmap (mapid_t mapping);
 bool mte_empty (struct mte *mte);
 struct mte *mt_get (struct thread *t, mapid_t mapid);
+size_t pin_multiple (const void *vaddr, size_t size);
 void unpin_multiple (const void *vaddr, size_t size);
 #endif /* userprog/syscall.h */

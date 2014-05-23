@@ -137,12 +137,16 @@ syscall_handler (struct intr_frame *f UNUSED)
 }
 
 /* Check whether a range of user viritual memory is valid. */
+/* If the return value is true, we will pin in-bound user pages
+ * in order to avoid user memory page fault in kernel mode.
+ * If the return value is false, don't pin any pages. */
 static bool
 check_user_memory (const void *vaddr, size_t size, bool to_write)
 {
   if (vaddr == NULL || !is_user_vaddr (vaddr + size))
     return false;
 
+  pin_multiple (vaddr, size);
   struct thread *t = thread_current ();
   void *upage = pg_round_down (vaddr);
 
@@ -151,7 +155,10 @@ check_user_memory (const void *vaddr, size_t size, bool to_write)
     if (!pagedir_check_userpage (t->pagedir, upage, to_write))
     {
       if (!_page_fault(NULL, upage))
+      {
+        unpin_multiple (vaddr, size);
         return false;
+      }
     }
   }
   return true;
@@ -163,6 +170,7 @@ get_stack_entry (uint32_t *esp, size_t offset)
 {
   if (!check_user_memory (esp + offset, sizeof(uint32_t), false))
     _exit (-1);
+  unpin_multiple (esp + offset, sizeof(uint32_t));
   return *(esp + offset);
 }
 
@@ -173,10 +181,14 @@ check_user_string (const char *str)
   unsigned strlen_max;
   if (!check_user_memory (str, 0, false))
     return 0;
+  unpin_multiple (str, 0);
   if (!check_user_memory (str, PGSIZE, false))
     strlen_max = pg_round_up (str) - (const void *)str;
   else
+  {
+    unpin_multiple (str, PGSIZE);
     strlen_max = PGSIZE;
+  }
   if (strnlen (str, strlen_max) >= strlen_max)
     return 0;
   return 1;
@@ -210,7 +222,6 @@ _read (int fd, void *buffer, unsigned size)
   int ret;
   if (!check_user_memory (buffer, size, true))
   {
-    unpin_multiple (buffer, size);
     _exit (-1);
   }
 
@@ -257,7 +268,6 @@ _write (int fd, const void *buffer, unsigned size)
   int ret;
   if (!check_user_memory (buffer, size, false))
   {
-    unpin_multiple (buffer, size);
     _exit (-1);
   }
 
@@ -440,7 +450,8 @@ static mapid_t _mmap (int fd, void *addr)
   return mapid;
 }
 
-static size_t pin_multiple (void *vaddr, size_t size)
+size_t
+pin_multiple (const void *vaddr, size_t size)
 {
   struct thread *cur = thread_current ();
   size_t page_cnt = DIV_ROUND_UP (size, PGSIZE);
@@ -658,6 +669,9 @@ _page_fault (void *intr_esp, void *fault_addr)
 
   /* If we experience page fault on pte, pin it since we need to prevent others from
    * accessing this page when we are handling page fault. */
+  ASSERT (pte == NULL || (*pte & PTE_I));
+  // TODO(zhihao): remove below?
+  /*
   lock_acquire(&pin_lock);
   if (pte != NULL) {
     while (*pte & PTE_I)
@@ -667,7 +681,7 @@ _page_fault (void *intr_esp, void *fault_addr)
     *pte |= PTE_I;
   }
   lock_release(&pin_lock);
-
+  */
   if (pte && (*pte & PTE_P))
   {
     return false;
@@ -775,10 +789,15 @@ static bool
 stack_growth (void *upage)
 {
   uint32_t *pte = lookup_page (thread_current()->pagedir, upage, true);
+  /* No need to add locks for this case since *pte cannot be accessed by 
+   * others. */
+  if (!(*pte & PTE_I))
+    *pte |= PTE_I;
   void *kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
   if (kpage == NULL)
     return false;
   update_pte (kpage, pte, PTE_U | PTE_P | PTE_W);
   return true;
 }
+
 
