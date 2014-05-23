@@ -791,7 +791,7 @@ stack_growth (void *upage)
   void *kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
   if (kpage == NULL)
     return false;
-  update_pte (kpage, pte, PTE_U | PTE_P | PTE_W);
+  update_pte (kpage, pte, PTE_I | PTE_U | PTE_P | PTE_W);
   return true;
 }
 
