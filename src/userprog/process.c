@@ -107,7 +107,6 @@ start_process (void *aux)
   if (success)
   {
     lock_acquire (&filesys_lock);
-    cur->exec_file = filesys_open (file_name);
     file_deny_write (cur->exec_file);
     lock_release (&filesys_lock);
   }
@@ -353,6 +352,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   lock_acquire (&filesys_lock);
   /* Open executable file. */
   file = filesys_open (file_name);
+  t->exec_file = file;
   if (file == NULL)
   {
     printf ("load: %s: open failed\n", file_name);
@@ -447,7 +447,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
 done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
   lock_release (&filesys_lock);
   return success;
 }
