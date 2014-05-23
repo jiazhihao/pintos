@@ -454,25 +454,22 @@ size_t
 pin_multiple (const void *vaddr, size_t size)
 {
   struct thread *cur = thread_current ();
-  size_t page_cnt = DIV_ROUND_UP (size, PGSIZE);
   lock_acquire (&pin_lock);
-  size_t i;
   void *upage = pg_round_down(vaddr);
   uint32_t *pte;
-  for (i = 0; i < page_cnt; i++)
+  for (; upage < vaddr + size; upage += PGSIZE)
   {
     pte = lookup_page (cur->pagedir, upage, false);
     if (!pte)
     {
       lock_release (&pin_lock);
-      return i * PGSIZE;
+      return (upage - vaddr);
     }
     while (*pte & PTE_I)
     {
       cond_wait (&pin_cond, &pin_lock);
     }
     *pte |= PTE_I;
-    upage += PGSIZE;
   }
   lock_release (&pin_lock);
   return size;
@@ -481,19 +478,17 @@ pin_multiple (const void *vaddr, size_t size)
 void unpin_multiple (const void *vaddr, size_t size)
 {
   struct thread *cur = thread_current ();
-  size_t page_cnt = DIV_ROUND_UP (size, PGSIZE);
   lock_acquire (&pin_lock);
-  size_t i;
   void *upage = pg_round_down (vaddr);
   uint32_t *pte;
-  for (i = 0; i < page_cnt; i++)
+  for (; upage < vaddr + size; upage += PGSIZE)
   {
     pte = lookup_page (cur->pagedir, upage, false);
     if (pte)
     {
+      ASSERT((*pte & PTE_I));
       *pte &= ~PTE_I;
     }
-    upage += PGSIZE;
   }
   lock_release (&pin_lock);
 }
