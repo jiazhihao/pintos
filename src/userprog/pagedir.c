@@ -10,8 +10,11 @@
 #include "vm/swap.h"
 #include "filesys/file.h"
 #include "threads/pte.h"
+#include "userprog/syscall.h"
 
 extern struct lock filesys_lock;
+extern struct lock pin_lock;
+extern struct condition pin_cond;
 
 static uint32_t *active_pd (void);
 static void invalidate_pagedir (uint32_t *);
@@ -80,6 +83,18 @@ pagedir_destroy (uint32_t *pd)
         
         for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
         {
+          /* If we are going to destroy pte, pin it since we need to 
+           * prevent others from
+           * accessing this page when we are handling page fault. */
+          lock_acquire(&pin_lock);
+          if (pte != NULL) {
+            while (*pte & PTE_I)
+            {
+              cond_wait(&pin_cond, &pin_lock);
+            }
+            *pte |= PTE_I;
+          }
+          lock_release(&pin_lock);
           /* Present page. */
           if (*pte & PTE_P) 
           {
@@ -95,6 +110,10 @@ pagedir_destroy (uint32_t *pd)
           {
             write_page_to_file (pte);
           }
+          lock_acquire (&pin_lock);
+          *pte &= ~PTE_I;
+          cond_broadcast (&pin_cond, &pin_lock);
+          lock_release (&pin_lock);
         }
         palloc_free_page (pt);
       }

@@ -59,8 +59,9 @@ frame_free_multiple (void *pages, size_t page_cnt)
     lock_release (&frame_table.frames[i].lock);
   }
 
+  //printf("PFM Started.\n");
   palloc_free_multiple (pages, page_cnt);
- 
+  //printf("PFM Compelted.\n");
 }
 
 void
@@ -84,6 +85,7 @@ unpin (uint32_t *pte)
   ASSERT(*pte & PTE_I);
   lock_acquire (&pin_lock);
   *pte &= ~PTE_I;
+  cond_broadcast (&pin_cond, &pin_lock);
   lock_release (&pin_lock);
 }
 
@@ -114,6 +116,12 @@ evict_and_get_page (enum frame_flags flags)
     /* Case 1.1:  fte->pte==NULL means the fte is not yet set (i.e. fte
      * is pinned), skip it. */
     if (pte == NULL)
+    {
+      clock_hand_increase_one ();
+      lock_release (&fte->lock);
+      continue;
+    }
+    if ((*pte & PTE_E) && (*pte & PTE_F) && !(*pte & PTE_W))
     {
       clock_hand_increase_one ();
       lock_release (&fte->lock);
