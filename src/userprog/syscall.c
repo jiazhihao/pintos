@@ -535,7 +535,9 @@ void _munmap (mapid_t mapping)
               lock_acquire (&filesys_lock);
               file_write_at (file, kpage, write_bytes, offset);
               lock_release (&filesys_lock);
+              printf ("FFP in unmap Started.\n");
               frame_free_page (kpage);
+              printf ("FFP in unmap Completed.\n");
             }
           }
           vaddr += write_bytes;
@@ -646,7 +648,7 @@ _page_fault (void *intr_esp, void *fault_addr)
   {
     return false;
   }
-
+  
   struct thread *cur = thread_current ();
   void *fault_page = pg_round_down(fault_addr);
   uint32_t *pte = lookup_page (cur->pagedir, fault_addr, false);
@@ -739,7 +741,9 @@ load_page_from_file (uint32_t *pte)
     }
   }
   lock_release (&cur->spt.lock);
+  printf ("FFP in loadpagefromfile Started.\n");
   frame_free_page (kpage);
+  printf ("FFP in loadpagefromfile Completed.\n");
   return false;
 }
 

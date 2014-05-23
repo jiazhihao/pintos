@@ -83,7 +83,9 @@ pagedir_destroy (uint32_t *pd)
           /* Present page. */
           if (*pte & PTE_P) 
           {
+            printf ("FFP in pagedir Started.\n");
             frame_free_page (pte_get_page (*pte));
+            printf ("FFP in pagedir Completed.\n");
           }
           /* Swapped page. */
           else if (pte && (*pte & PTE_U)  && !(*pte & PTE_P) && !(*pte & PTE_F))

@@ -601,7 +601,9 @@ setup_stack (void **esp)
       *esp = PHYS_BASE;
     else
     {
+      printf ("FFP in setup_stack Started.\n");
       frame_free_page (kpage);
+      printf ("FFP in setup_stack Completed.\n");
     }
   }
   return success;
