@@ -59,8 +59,9 @@ frame_free_multiple (void *pages, size_t page_cnt)
     lock_release (&frame_table.frames[i].lock);
   }
 
+  printf("PFM Started.\n");
   palloc_free_multiple (pages, page_cnt);
- 
+  printf("PFM Compelted.\n");
 }
 
 void
