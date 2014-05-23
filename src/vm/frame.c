@@ -83,6 +83,7 @@ unpin (uint32_t *pte)
   ASSERT(*pte & PTE_I);
   lock_acquire (&pin_lock);
   *pte &= ~PTE_I;
+  cond_broadcast (&pin_cond, &pin_lock);
   lock_release (&pin_lock);
 }
 

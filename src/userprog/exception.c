@@ -165,6 +165,7 @@ page_fault (struct intr_frame *f)
    * return. The reason we pin the page in _page_fault is because, when
    * kernel tries to access user_memory, we need to pin all user meory pages
    * in order to avoid user memory page fault in kernel mode.*/
+  pin_multiple (fault_addr, 1);
   if (_page_fault(f->esp, fault_addr)) {
     unpin_multiple(fault_addr, 1);
     return;
