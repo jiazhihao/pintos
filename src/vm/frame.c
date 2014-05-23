@@ -92,15 +92,22 @@ unpin (uint32_t *pte)
 static void *
 evict_and_get_page (enum frame_flags flags)
 {
+  // TODO
+  printf("thread (%d): Evict Start.\n", thread_current()->tid); 
+  int debug_cnt = 0;
+  
   struct fte *fte;
   uint32_t *pte;
   struct spte *spte;
   void *kpage;
   while (1) 
   {
+    if (debug_cnt++ > 10000)
+      printf ("CANNOT EVICT !!!\n");
     lock_acquire (&frame_table.clock_lock); 
     fte = &frame_table.frames[frame_table.clock_hand];
     kpage = user_pool.base + frame_table.clock_hand * PGSIZE;
+    printf ("clock_hand: %u of thread (%d)\n", frame_table.clock_hand, thread_current()->tid);
     lock_release (&frame_table.clock_lock);
     
     if (!lock_try_acquire (&fte->lock))
@@ -108,8 +115,6 @@ evict_and_get_page (enum frame_flags flags)
       clock_hand_increase_one ();
       continue;
     }
-
-    //lock_acquire (&fte->lock);
     pte = fte->pte;
     /* Case 1.1:  fte->pte==NULL means the fte is not yet set (i.e. fte
      * is pinned), skip it. */
@@ -149,8 +154,13 @@ evict_and_get_page (enum frame_flags flags)
     }
     bool is_mmap_page = (*pte & PTE_F) && !(*pte & PTE_E);
     bool is_exec_page = (*pte & PTE_F) && (*pte & PTE_E);
-    ASSERT (fte->thread != NULL);    
+    ASSERT (fte->thread != NULL);
+    printf ("thread (%d): bef ACQ spt.lock. of thread: %d\n", thread_current()->tid, fte->thread->tid); 
+    struct thread *holder = fte->thread->spt.lock.holder;
+    if (holder)
+      printf ("spt.lock holder thread: %d, %s\n", holder->tid, holder->name);
     lock_acquire (&fte->thread->spt.lock);
+    printf ("thread (%d): aft ACQ spt.lock. of thread: %d\n", thread_current()->tid, fte->thread->tid); 
     spte = spt_find (&fte->thread->spt, pte);
     bool has_swap_page = !(*pte & PTE_F) && (spte != NULL);
     /* Case 3: if unaccessed but dirty. */
@@ -180,6 +190,7 @@ evict_and_get_page (enum frame_flags flags)
           spte = spt_insert (&fte->thread->spt, pte, &daddr);
           if (spte == NULL) {
             lock_release (&fte->thread->spt.lock);
+            printf ("thread (%d): aft REL spt.lock.\n", thread_current()->tid); 
             lock_release (&fte->lock);
             unpin(pte);
             _exit (-1);
@@ -200,6 +211,7 @@ evict_and_get_page (enum frame_flags flags)
       *pte &= ~PTE_D;
       clock_hand_increase_one ();
       lock_release (&fte->thread->spt.lock);
+      printf ("thread (%d): aft REL spt.lock.\n", thread_current()->tid); 
       lock_release (&fte->lock);
       unpin(pte);
       continue;
@@ -234,6 +246,7 @@ evict_and_get_page (enum frame_flags flags)
         spte = spt_insert (&fte->thread->spt, pte, &daddr);
         if (spte == NULL) {
           lock_release (&fte->thread->spt.lock);
+          printf ("thread (%d): aft REL spt.lock.\n", thread_current()->tid); 
           lock_release (&fte->lock);
           unpin(pte);
           _exit (-1);
@@ -247,12 +260,14 @@ evict_and_get_page (enum frame_flags flags)
     }
  
     lock_release (&fte->thread->spt.lock);
+    printf ("thread (%d): aft REL spt.lock.\n", thread_current()->tid); 
     fte->thread = NULL;
     fte->pte = NULL; 
     lock_release (&fte->lock);
     unpin(pte);
     if (flags & FRM_ZERO)
       memset (kpage, 0, PGSIZE);
+    printf("thread (%d): Evict Complete.\n", thread_current()->tid); 
     return kpage;
   } /* End of while. */
 }

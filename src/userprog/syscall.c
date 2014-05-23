@@ -514,9 +514,12 @@ void _munmap (mapid_t mapping)
   pte = lookup_page (cur->pagedir, mte->vaddr, false);
   if (pte && *pte && (*pte & PTE_F) && (*pte & PTE_U))
   {
+    //printf ("thread (%d): bef ACQ spt.lock.munmap1.\n", thread_current()->tid); 
     lock_acquire (&cur->spt.lock);
+    //printf ("thread (%d): aft ACQ spt.lock.munmap1.\n", thread_current()->tid); 
     struct spte *spte = spt_find (&cur->spt, pte);
     lock_release (&cur->spt.lock);
+    //printf ("thread (%d): aft REL spt.lock.munmap1.\n", thread_current()->tid); 
     if (spte)
     {
       struct file *file = spte->daddr.file_meta.file;
@@ -558,7 +561,9 @@ void _munmap (mapid_t mapping)
   size_t page_cnt = DIV_ROUND_UP (mte->size, PGSIZE);
   size_t i; 
   vaddr = mte->vaddr;
+  //printf ("thread (%d): bef ACQ spt.lock.munmap2.\n", thread_current()->tid); 
   lock_acquire (&cur->spt.lock);
+  //printf ("thread (%d): aft ACQ spt.lock.munmap2.\n", thread_current()->tid); 
   for (i = 0; i < page_cnt; i++)
   {
     pte = lookup_page (cur->pagedir, vaddr, false);
@@ -567,6 +572,7 @@ void _munmap (mapid_t mapping)
     vaddr += PGSIZE;
   }
   lock_release (&cur->spt.lock);
+  //printf ("thread (%d): aft REL spt.lock.munmap2.\n", thread_current()->tid); 
   unpin_multiple (mte->vaddr, pin_size);
   mt_rm (cur, mapping);
 }
@@ -729,7 +735,9 @@ load_page_from_file (uint32_t *pte)
     return false;
   }
   ASSERT (pg_ofs (kpage) == 0);
+  //printf ("thread (%d): bef ACQ spt.lock.load_from_file.\n", thread_current()->tid); 
   lock_acquire (&cur->spt.lock);
+  //printf ("thread (%d): aft ACQ spt.lock.load_from_file.\n", thread_current()->tid); 
   struct spte *spte = spt_find (&cur->spt, pte);
   if (spte)
   {
@@ -744,10 +752,12 @@ load_page_from_file (uint32_t *pte)
     {
       update_pte (kpage, pte, (*pte & PTE_FLAGS));
       lock_release (&cur->spt.lock);
+      //printf ("thread (%d): aft REL spt.lock.load_from_file.\n", thread_current()->tid); 
       return true;
     }
   }
   lock_release (&cur->spt.lock);
+  //printf ("thread (%d): aft REL spt.lock.load_from_file.\n", thread_current()->tid); 
   frame_free_page (kpage);
   return false;
 }
@@ -767,7 +777,9 @@ load_page_from_swap (uint32_t *pte)
      clear spte by removing it. */
   // TODO (rqi) consider parallism support: T1 read its frame X
   // while T2 evicting frame Y owned by T1.
+  //printf ("thread (%d): bef ACQ spt.lock.load_from_swap.\n", thread_current()->tid); 
   lock_acquire (&cur->spt.lock);
+  //printf ("thread (%d): aft ACQ spt.lock.load_from_swap.\n", thread_current()->tid); 
   struct spte *spte = spt_find (&cur->spt, pte);
   ASSERT ((spte != NULL) && (spte->daddr.swap_addr != 0));
   size_t swap_page_no = spte->daddr.swap_addr;
@@ -775,6 +787,7 @@ load_page_from_swap (uint32_t *pte)
   swap_free_page (&swap_table, swap_page_no);
   spt_delete (&cur->spt, pte);
   lock_release (&cur->spt.lock);
+  //printf ("thread (%d): aft REL spt.lock.load_from_swap.\n", thread_current()->tid); 
   
   update_pte (kpage, pte, (*pte & PTE_FLAGS));
   return true;

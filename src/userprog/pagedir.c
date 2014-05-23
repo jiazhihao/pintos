@@ -37,13 +37,16 @@ free_page_in_swap (uint32_t *pte)
 {
   ASSERT (pte != NULL);
   struct thread *cur = thread_current();
+  //printf ("thread (%d): bef ACQ spt.lock.free_page_in_swap.\n", thread_current()->tid); 
   lock_acquire (&cur->spt.lock);
+  //printf ("thread (%d): aft ACQ spt.lock.free_page_in_swap.\n", thread_current()->tid); 
   struct spte *spte = spt_find (&cur->spt, pte);
   ASSERT ((spte != NULL) && (spte->daddr.swap_addr != 0));
   size_t swap_page_no = spte->daddr.swap_addr;
   swap_free_page (&swap_table, swap_page_no);
   spt_delete (&cur->spt, pte);
   lock_release (&cur->spt.lock);
+  //printf ("thread (%d): aft REL spt.lock.free_page_in_swap.\n", thread_current()->tid); 
 }
 
 /* Destroys page directory PD, freeing all the pages it
