@@ -85,7 +85,6 @@ process_execute (const char *cmd_line)
 static void
 start_process (void *aux)
 {
-  //printf ("thread (%d) beg in start_process.\n", thread_current()->tid);
   struct start_status *start = aux;
   char *cmd_line = start->cmd_line;
   struct intr_frame if_;
@@ -119,7 +118,6 @@ start_process (void *aux)
   if (!success)
     thread_exit ();
   
-  //printf ("thread (%d) end in start_process.\n", thread_current()->tid);
 
   /* Start the user process by simulating a return from an
   interrupt, implemented by intr_exit (in
@@ -611,18 +609,16 @@ setup_stack (void **esp)
   void *upage = ((uint8_t *)PHYS_BASE) - PGSIZE;
   struct thread *t = thread_current();
   uint32_t *pte = lookup_page (t->pagedir, upage, true);
+  pin_multiple (upage, PGSIZE);
   kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
 
   if (kpage != NULL)
   {
-    success = install_page (upage, kpage, true);
-    if (success)
-      *esp = PHYS_BASE;
-    else
-    {
-      frame_free_page (kpage);
-    }
+    update_pte (kpage, pte, (*pte & PTE_FLAGS) | PTE_U | PTE_W);
+    *esp = PHYS_BASE;
+    success = true;
   }
+  unpin_multiple (upage, PGSIZE);
   return success;
 }
 
