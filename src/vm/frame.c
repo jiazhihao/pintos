@@ -90,23 +90,31 @@ unpin (uint32_t *pte)
 static bool
 swap_out_page (void *kpage, struct spt *spt, uint32_t *pte)
 {
-  size_t swap_page_no = swap_get_page (&swap_table);
-  swap_write_page (&swap_table, swap_page_no, kpage);
   struct spte *spte = spt_find (spt, pte);
-  if (spte == NULL)
+  bool has_swap_page = !(*pte & PTE_F) && (spte != NULL);
+  if (!has_swap_page)
   {
-    union daddr daddr;
-    daddr.swap_addr = swap_page_no;
-    spte = spt_insert (spt, pte, &daddr);
-    if (spte == NULL) 
+    size_t swap_page_no = swap_get_page (&swap_table);
+    swap_write_page (&swap_table, swap_page_no, kpage);
+    if (spte == NULL)
     {
-      swap_free_page (&swap_table, swap_page_no);
-      return false;
+      union daddr daddr;
+      daddr.swap_addr = swap_page_no;
+      spte = spt_insert (spt, pte, &daddr);
+      if (spte == NULL) 
+      {
+        swap_free_page (&swap_table, swap_page_no);
+        return false;
+      }
+    }
+    else
+    {
+      spte->daddr.swap_addr = swap_page_no;
     }
   }
   else
   {
-    spte->daddr.swap_addr = swap_page_no;
+    swap_write_page (&swap_table, spte->daddr.swap_addr, kpage);
   }
   return true;
 }
@@ -118,7 +126,6 @@ evict_and_get_page (enum frame_flags flags)
 {
   struct fte *fte;
   uint32_t *pte;
-  struct spte *spte;
   void *kpage;
   while (1) 
   {
@@ -141,12 +148,12 @@ evict_and_get_page (enum frame_flags flags)
       lock_release (&fte->lock);
       continue;
     }
-    if ((*pte & PTE_E) && (*pte & PTE_F) && !(*pte & PTE_W))
-    {
-      clock_hand_increase_one ();
-      lock_release (&fte->lock);
-      continue;
-    }
+    //if ((*pte & PTE_E) && (*pte & PTE_F) && !(*pte & PTE_W))
+    //{
+    //  clock_hand_increase_one ();
+    //  lock_release (&fte->lock);
+    //  continue;
+    //}
     /* Case 1.2: if the page is pinned, skip it. */
     lock_acquire (&pin_lock);
     if (*pte & PTE_I)
@@ -173,14 +180,13 @@ evict_and_get_page (enum frame_flags flags)
     bool is_exec_page = (*pte & PTE_F) && (*pte & PTE_E);
     ASSERT (fte->thread != NULL);
     lock_acquire (&fte->thread->spt.lock);
-    spte = spt_find (&fte->thread->spt, pte);
-    bool has_swap_page = !(*pte & PTE_F) && (spte != NULL);
     /* Case 3: if unaccessed but dirty. */
     if (*pte & PTE_D)
     {
       /* Case 3.1: mmaped file. */
       if (is_mmap_page)
       {
+        struct spte *spte = spt_find (&fte->thread->spt, pte);
         ASSERT ((spte != NULL) && (spte->daddr.file_meta.file != NULL));
         struct file_meta *fm = &spte->daddr.file_meta;
         lock_acquire (&filesys_lock);
@@ -188,7 +194,8 @@ evict_and_get_page (enum frame_flags flags)
         lock_release (&filesys_lock);
       }
       /* Case 3.2: exec. file or non-file. without swap_page*/
-      else if (!is_mmap_page && !has_swap_page)
+      /* Case 3.3: exec. file or non-file with swap_page */
+      else
       {
         if (!swap_out_page (kpage, &fte->thread->spt, pte))
         {
@@ -200,17 +207,6 @@ evict_and_get_page (enum frame_flags flags)
         /* Once swapped, read from swap next time. */
         *pte &= ~PTE_F;
         *pte &= ~PTE_E;
-      }
-      /* Case 3.3: exec. file or non-file with swap_page */
-      else if (!is_mmap_page && has_swap_page)
-      {
-        spte = spt_find (&fte->thread->spt, pte);
-        ASSERT ((spte != NULL) && (spte->daddr.swap_addr != 0));
-        swap_write_page (&swap_table, spte->daddr.swap_addr, kpage);  
-      }
-      else
-      {
-        NOT_REACHED ();
       }
       *pte &= ~PTE_D;
       clock_hand_increase_one ();
@@ -235,7 +231,7 @@ evict_and_get_page (enum frame_flags flags)
     /* Case 4.2.1: exec. file. No need to write back. */
     
     /* Case 4.2.2: non-file. Write to swap. */
-    if (!is_mmap_page && !is_exec_page && !has_swap_page)
+    if (!is_mmap_page && !is_exec_page)
     {
       if (!swap_out_page (kpage, &t->spt, pte))
       {
