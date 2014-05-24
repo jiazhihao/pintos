@@ -76,7 +76,7 @@ process_execute (const char *cmd_line)
   }
   else
   {
-    return -1;
+    return process_wait(tid);
   }
 }
 
