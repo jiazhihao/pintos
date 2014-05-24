@@ -591,18 +591,16 @@ setup_stack (void **esp)
   void *upage = ((uint8_t *)PHYS_BASE) - PGSIZE;
   struct thread *t = thread_current();
   uint32_t *pte = lookup_page (t->pagedir, upage, true);
+  pin_multiple (upage, PGSIZE);
   kpage = frame_get_page (FRM_USER | FRM_ZERO, pte);
 
   if (kpage != NULL)
   {
-    success = install_page (upage, kpage, true);
-    if (success)
-      *esp = PHYS_BASE;
-    else
-    {
-      frame_free_page (kpage);
-    }
+    update_pte (kpage, pte, (*pte & PTE_FLAGS) | PTE_U | PTE_W);
+    *esp = PHYS_BASE;
+    success = true;
   }
+  unpin_multiple (upage, PGSIZE);
   return success;
 }
 

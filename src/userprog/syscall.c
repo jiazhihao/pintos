@@ -707,7 +707,7 @@ _page_fault (void *intr_esp, void *fault_addr)
   return false;
 }
 
-static void
+void
 update_pte (void *kpage, uint32_t *pte, uint32_t flags)
 {
   ASSERT (!(*pte & PTE_P));
