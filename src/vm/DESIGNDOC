@@ -1,8 +1,8 @@
-        +---------------------------+
-		    | CS 140                    |
-		    | PROJECT 3: VIRTUAL MEMORY	|
-		    |	DESIGN DOCUMENT           |
-		    +---------------------------+
+                    +---------------------------+
+                    | CS 140                    |
+                    | PROJECT 3: VIRTUAL MEMORY |
+                    | DESIGN DOCUMENT           |
+                    +---------------------------+
 
 ---- GROUP ----
 
@@ -16,10 +16,12 @@ FirstName LastName <email@domain.example>
 
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
+None.
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
+None.
 
 			PAGE TABLE MANAGEMENT
 			=====================
@@ -30,10 +32,132 @@ FirstName LastName <email@domain.example>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+-- In thread.h --
+Change struct thread:
+struct thread
+{
+  bool is_user;                       /* Flag to identify whether the 
+                                         thread is user process. */
+  struct spt spt;                     /* Supplemental page table */
+  struct mte *mt;                     /* Mmap table */
+  int mt_size;                        /* Mmap table size */
+  void *esp;                          /* User esp value at the initial
+                                         transition from user to kernel*/
+}
+
+New struct mte:
+/* Mmap table entry */
+struct mte
+{
+  void *vaddr;                          /* The start addr of this map */
+  size_t size;                          /* The mapped page count */
+};
+
+
+-- In swap.h --
+New enum type:
+/* flages for each frame entry */
+enum frame_flags
+{
+    FRM_ASSERT = 0x1,           /* Panic on failure. */
+    FRM_ZERO = 0x2,             /* Zero page contents. */
+    FRM_USER = 0x4,             /* User page. */
+    FRM_MMAP = 0x8              /* Page used for mmap. */
+};
+
+/* Frame table entry */
+struct fte
+{
+  struct thread *thread;        /* Thread that owns this frame table entry. */
+  uint32_t *pte;                /* The beginning virtual address that cooresponds
+                                   to this frame table entry. */
+  struct lock lock;             /* Per entry lock. */
+};
+
+/* Frame table */
+struct frame_table
+{
+  size_t size;                  /* Total number of frames in this frame table */
+  struct fte *frames;           /* Frames in the table */
+  size_t clock_hand;            /* Clock hand for eviciton algorithm. */
+  struct lock clock_lock;       /* Lock for clock_hand. */
+};
+
+struct frame_table frame_table; /* Global table used to check user memory. */
+
+-- In swap.h --
+New struct swap_table:
+/* Swap talbe used to track used disk space. */
+struct swap_table
+{
+  struct block *swap_block;    /* Swap block for paging. */
+  struct bitmap *used_map;     /* Bitmap for free swap pages. */
+  struct lock block_lock;      /* Lock to protect swap_block. */
+  struct lock bitmap_lock;     /* Lock to protect used_map. */
+};
+
+struct swap_table swap_table;  /* Global table tracking swap frames in swap block. */
+
+-- In page.h --
+New struct file_meta:
+/* file metadata for each mmap file*/
+struct file_meta
+{
+  struct file *file;            /* pointer to a file structure */
+  off_t offset;                 /* offset in the above file */
+  size_t read_bytes;            /* total amount of bytes to read */
+};
+
+New union struct daddr:
+/* union used by supplemental page table
+ * entry to find corresponding files */
+union daddr
+{
+  size_t swap_addr;             /* If this page is stored in as a swap page,
+                                   swap_add indicates the slot num of the page
+                                   in swap table */
+  struct file_meta file_meta;   /* If the page is stored in disk as a mmap
+                                   file, file_meta data stores necessary
+                                   information to regain the page */
+};
+
+New struct spt:
+/* supplemental page table */
+struct spt
+{
+  struct hash table;            /* hash table to implement supplemental page
+                                   table */
+  struct lock lock;             /* lock for supplemental page table */
+};
+
+New struct spte:
+/* supplemental page table entry*/
+struct spte
+{
+  uint32_t *pte;                /* pointer to a page table entry*/
+  union daddr daddr;            /* union used to find cooresponding file*/
+  struct hash_elem elem;        /* element for hash table */
+};
+
+-- pte.h --
+New flags for page table entry
+#define PTE_FLAGS 0x00000fff    /* Flag bits. */
+#define PTE_ADDR  0xfffff000    /* Address bits. */
+#define PTE_AVL   0x00000e00    /* Bits available for OS use. */
+#define PTE_P 0x1               /* 1=present, 0=not present. */
+#define PTE_W 0x2               /* 1=read/write, 0=read-only. */
+#define PTE_U 0x4               /* 1=user/kernel, 0=kernel only. */
+#define PTE_F 0x8               /* 1=comes from file, 0=in memory */
+#define PTE_E 0x10              /* 1=comes from executable, 0=normal */
+#define PTE_A 0x20              /* 1=accessed, 0=not acccessed. */
+#define PTE_D 0x40              /* 1=dirty, 0=not dirty (PTEs only). */
+#define PTE_I 0x80              /* 1=pinned, 0=not pinned. */
+
 ---- ALGORITHMS ----
 
 >> A2: In a few paragraphs, describe your code for locating the frame,
 >> if any, that contains the data of a given page.
+
 
 >> A3: How does your code coordinate accessed and dirty bits between
 >> kernel and user virtual addresses that alias a single frame, or
