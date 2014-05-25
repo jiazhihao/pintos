@@ -533,6 +533,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
   uint8_t *input_page = upage;
+  uint32_t *pte;
   /* To prevent deadlock, must not hold filesys_lock 
      before acquiring spt.lock. */
   ASSERT (!lock_held_by_current_thread (&filesys_lock));
@@ -545,7 +546,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
     /* Get a page of memory. */
-    uint32_t *pte = lookup_page (cur->pagedir, upage, true);
+    pte = lookup_page (cur->pagedir, upage, true);
     if (!pte || *pte)
     {
       goto fail;
@@ -590,7 +591,9 @@ fail:
     //printf ("thread (%d): aft ACQ spt.lock.load_segment2.\n", thread_current()->tid); 
     for (upage -= PGSIZE; upage >= input_page; upage -= PGSIZE)
     {
-      spt_delete (&cur->spt, lookup_page (cur->pagedir, upage, false));
+      pte = lookup_page (cur->pagedir, upage, false);
+      spt_delete (&cur->spt, pte);
+      *pte = 0;
     }
     lock_release (&cur->spt.lock);
     //printf ("thread (%d): aft REL spt.lock.load_segment2.\n", thread_current()->tid); 
