@@ -438,7 +438,8 @@ static mapid_t _mmap (int fd, void *addr)
     return -1;
   }
   size_t page_cnt = DIV_ROUND_UP(size, PGSIZE);
-  if (!load_segment (file, 0, addr, size, PGSIZE * page_cnt - size, true, false))
+  if (!load_segment (file, 0, addr, size, 
+                     PGSIZE * page_cnt - size, true, false))
   {
     return -1;
   }
@@ -735,7 +736,8 @@ load_page_from_file (uint32_t *pte)
     if (meta.read_bytes > 0)
     {
       lock_acquire (&filesys_lock);
-      read_bytes = file_read_at (meta.file, kpage, meta.read_bytes, meta.offset);
+      read_bytes = file_read_at (meta.file, kpage, meta.read_bytes, 
+                                 meta.offset);
       lock_release (&filesys_lock);
     }
     if (read_bytes == meta.read_bytes)

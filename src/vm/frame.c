@@ -159,12 +159,6 @@ evict_and_get_page (enum frame_flags flags)
       lock_release (&fte->lock);
       continue;
     }
-    //if ((*pte & PTE_E) && (*pte & PTE_F) && !(*pte & PTE_W))
-    //{
-    //  clock_hand_increase_one ();
-    //  lock_release (&fte->lock);
-    //  continue;
-    //}
     /* Case 1.2: frame is pinned, skip it. */
     lock_acquire (&pin_lock);
     if (*pte & PTE_I)

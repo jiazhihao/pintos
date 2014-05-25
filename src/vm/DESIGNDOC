@@ -88,16 +88,8 @@ struct spte
 
 -- pte.h --
 New flags for page table entry
-#define PTE_FLAGS 0x00000fff    /* Flag bits. */
-#define PTE_ADDR  0xfffff000    /* Address bits. */
-#define PTE_AVL   0x00000e00    /* Bits available for OS use. */
-#define PTE_P 0x1               /* 1=present, 0=not present. */
-#define PTE_W 0x2               /* 1=read/write, 0=read-only. */
-#define PTE_U 0x4               /* 1=user/kernel, 0=kernel only. */
 #define PTE_F 0x8               /* 1=comes from file, 0=in memory */
 #define PTE_E 0x10              /* 1=comes from executable, 0=normal */
-#define PTE_A 0x20              /* 1=accessed, 0=not acccessed. */
-#define PTE_D 0x40              /* 1=dirty, 0=not dirty (PTEs only). */
 #define PTE_I 0x80              /* 1=pinned, 0=not pinned. */
 
 
@@ -224,7 +216,7 @@ enum frame_flags
 struct fte
 {
   struct thread *thread;        /* Thread that owns this frame table entry. */
-  uint32_t *pte;                /* The beginning virtual address that cooresponds
+  uint32_t *pte;                /* The beginning virtual address cooresponding
                                    to this frame table entry. */
   struct lock lock;             /* Per entry lock. */
 };
@@ -251,7 +243,8 @@ struct swap_table
   struct lock bitmap_lock;      /* Lock to protect used_map. */
 };
 
-struct swap_table swap_table;  /* Global table tracking swap frames in swap block. */
+struct swap_table swap_table;  /* Global table tracking swap frames 
+                                  in swap block. */
 
 ---- ALGORITHMS ----
 
@@ -491,7 +484,7 @@ struct thread
 {
   struct mte *mt;                     /* Mmap table */
   int mt_size;                        /* Mmap table size */
-}
+};
 
 ---- ALGORITHMS ----
 

@@ -16,7 +16,7 @@ enum frame_flags
 struct fte
 {
   struct thread *thread;        /* Thread that owns this frame table entry. */
-  uint32_t *pte;                /* The beginning virtual address that cooresponds
+  uint32_t *pte;                /* The beginning virtual address cooresponding
                                    to this frame table entry. */
   struct lock lock;             /* Per entry lock. */
 };

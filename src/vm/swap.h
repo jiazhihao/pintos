@@ -19,7 +19,8 @@ struct swap_table
   struct lock bitmap_lock;     /* Lock to protect used_map. */
 };
 
-struct swap_table swap_table;  /* Global table tracking swap frames in swap block. */
+struct swap_table swap_table;  /* Global table tracking swap frames in 
+                                  swap block. */
 
 void swap_table_init (struct swap_table *);
 size_t swap_get_page (struct swap_table *);
