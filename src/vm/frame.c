@@ -222,13 +222,11 @@ evict_and_get_page (enum frame_flags flags)
     /* At this point, a evictable frame has been found. */ 
     /* Reset unpresent bit before flushing to prevent user 
        from modifying the page. */
-    intr_disable ();
     *pte &= ~PTE_P;
     *pte |= PTE_A;
     struct thread *t = fte->thread;
     fte->thread = NULL;
     fte->pte = NULL; 
-    intr_enable ();
     /* Case 4: the page is neither accessed nor dirty. swap it! */
     /* Case 4.1: mmaped file. */
     /* Case 4.2: exec. file or non-file. without swap_page*/
