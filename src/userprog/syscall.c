@@ -765,8 +765,6 @@ load_page_from_swap (uint32_t *pte)
   struct thread *cur = thread_current ();
   /* Get swap_page_no from spte, read page from swap to kpage and
      clear spte by removing it. */
-  // TODO (rqi) consider parallism support: T1 read its frame X
-  // while T2 evicting frame Y owned by T1.
   lock_acquire (&cur->spt.lock);
   struct spte *spte = spt_find (&cur->spt, pte);
   ASSERT ((spte != NULL) && (spte->daddr.swap_addr != 0));
