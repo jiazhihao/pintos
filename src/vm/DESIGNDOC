@@ -53,51 +53,6 @@ struct mte
   size_t size;                          /* The mapped page count */
 };
 
-
--- In swap.h --
-New enum type:
-/* flages for each frame entry */
-enum frame_flags
-{
-    FRM_ASSERT = 0x1,           /* Panic on failure. */
-    FRM_ZERO = 0x2,             /* Zero page contents. */
-    FRM_USER = 0x4,             /* User page. */
-    FRM_MMAP = 0x8              /* Page used for mmap. */
-};
-
-/* Frame table entry */
-struct fte
-{
-  struct thread *thread;        /* Thread that owns this frame table entry. */
-  uint32_t *pte;                /* The beginning virtual address that cooresponds
-                                   to this frame table entry. */
-  struct lock lock;             /* Per entry lock. */
-};
-
-/* Frame table */
-struct frame_table
-{
-  size_t size;                  /* Total number of frames in this frame table */
-  struct fte *frames;           /* Frames in the table */
-  size_t clock_hand;            /* Clock hand for eviciton algorithm. */
-  struct lock clock_lock;       /* Lock for clock_hand. */
-};
-
-struct frame_table frame_table; /* Global table used to check user memory. */
-
--- In swap.h --
-New struct swap_table:
-/* Swap talbe used to track used disk space. */
-struct swap_table
-{
-  struct block *swap_block;    /* Swap block for paging. */
-  struct bitmap *used_map;     /* Bitmap for free swap pages. */
-  struct lock block_lock;      /* Lock to protect swap_block. */
-  struct lock bitmap_lock;     /* Lock to protect used_map. */
-};
-
-struct swap_table swap_table;  /* Global table tracking swap frames in swap block. */
-
 -- In page.h --
 New struct file_meta:
 /* file metadata for each mmap file*/
@@ -182,14 +137,103 @@ New flags for page table entry
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+-- In frame.h --
+New enum type:
+/* flages for each frame entry */
+enum frame_flags
+{
+    FRM_ASSERT = 0x1,           /* Panic on failure. */
+    FRM_ZERO = 0x2,             /* Zero page contents. */
+    FRM_USER = 0x4,             /* User page. */
+    FRM_MMAP = 0x8              /* Page used for mmap. */
+};
+
+/* Frame table entry */
+struct fte
+{
+  struct thread *thread;        /* Thread that owns this frame table entry. */
+  uint32_t *pte;                /* The beginning virtual address that cooresponds
+                                   to this frame table entry. */
+  struct lock lock;             /* Per entry lock. */
+};
+
+/* Frame table */
+struct frame_table
+{
+  size_t size;                  /* Total number of frames in this frame table */
+  struct fte *frames;           /* Frames in the table */
+  size_t clock_hand;            /* Clock hand for eviciton algorithm. */
+  struct lock clock_lock;       /* Lock for clock_hand. */
+};
+
+struct frame_table frame_table; /* Global table used to check user memory. */
+
+-- In swap.h --
+New struct swap_table:
+/* Swap talbe used to track used disk space. */
+struct swap_table
+{
+  struct block *swap_block;     /* Swap block for paging. */
+  struct bitmap *used_map;      /* Bitmap for free swap pages. */
+  struct lock block_lock;       /* Lock to protect swap_block. */
+  struct lock bitmap_lock;      /* Lock to protect used_map. */
+};
+
+struct swap_table swap_table;  /* Global table tracking swap frames in swap block. */
+
 ---- ALGORITHMS ----
 
 >> B2: When a frame is required but none is free, some frame must be
 >> evicted.  Describe your code for choosing a frame to evict.
 
+We used clock algorithm for frame eviction. Each time the system need to 
+evict a page, it iterate through the frames in frame_table starting from 
+where the clock_hand was last time. For each frame, the algorithm go through 
+the following checks until find an evictable frame.
+
+(1) If the frame is pinned or the frame's lock is held by others, go on.
+(2) If the frame/page is accessed recently (pte's PTE_A is set), reset the 
+page's access bit and go on to next frame.
+(3) If the frame is not accessed recently but dirty, write page back to file
+if it's mmapped or write it to swap slot if it from exec. file or non-file, 
+then set spte accordingly, reset dirty bit and go on to next frame.
+(4) If the frame is neither accessed recently nor dirty, it's evictable. We
+need to write it to a swap slot if the page is from non-file and set spte
+accordingly. Now, a frame has been successfully evicted and free to use.
+
 >> B3: When a process P obtains a frame that was previously used by a
 >> process Q, how do you adjust the page table (and any other data
 >> structures) to reflect the frame Q no longer has?
+
+In our design, each physical page in user pool is represented by a frame
+table entry. Each frame table entry records the owner thread of the physical 
+frame and the page table entry corresponding to it. Status of a page is 
+stored in the last 12 bits (FLAGS) of its page table entry, i.e. whether it 
+is a file page, an executable file page or a pinned page etc. From a thread's 
+supplemental page table (a hash table) and its page's pte, we can find the 
+page's spte, which stores the eviction related information such as the file 
+source or swap slot number etc. 
+
+                                SPTE, t->spt[index]
+                               -----------------------
+                        SPT - | uint32_t *pte         |
+         FTE          /       | struct daddr daddr  - - -> swap slot or file
+   ----------------- /        | struct hash_elem elem |
+  | struct thread *t |         ---------------------- \
+  | uint32_t *pte    |                                 | (hash)
+   --------------- \-                PTE              /
+                    \   -----------------------------
+                     \ | 20bit PhyAddr | 12bit FLAGS |
+                        -----------------------------
+
+Firstly, process Q's corresponding virtual page is set as unpresent 
+(i.e. PTE_P bit is 0) and the page is written back to file or swap slot if 
+necessary. The address of the page in file or swap disk is recorded in 
+the page's corresponding spte. Thus, next time the process Q's page is 
+accessed a page fault will be trigured.
+
+Secondly, the frame entry is modified to point to process P's page's PTE and
+also owner thread becomes thread P.
 
 >> B4: Explain your heuristic for deciding whether a page fault for an
 >> invalid virtual address should cause the stack to be extended into
