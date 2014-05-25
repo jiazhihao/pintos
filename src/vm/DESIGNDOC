@@ -53,51 +53,6 @@ struct mte
   size_t size;                          /* The mapped page count */
 };
 
-
--- In swap.h --
-New enum type:
-/* flages for each frame entry */
-enum frame_flags
-{
-    FRM_ASSERT = 0x1,           /* Panic on failure. */
-    FRM_ZERO = 0x2,             /* Zero page contents. */
-    FRM_USER = 0x4,             /* User page. */
-    FRM_MMAP = 0x8              /* Page used for mmap. */
-};
-
-/* Frame table entry */
-struct fte
-{
-  struct thread *thread;        /* Thread that owns this frame table entry. */
-  uint32_t *pte;                /* The beginning virtual address that cooresponds
-                                   to this frame table entry. */
-  struct lock lock;             /* Per entry lock. */
-};
-
-/* Frame table */
-struct frame_table
-{
-  size_t size;                  /* Total number of frames in this frame table */
-  struct fte *frames;           /* Frames in the table */
-  size_t clock_hand;            /* Clock hand for eviciton algorithm. */
-  struct lock clock_lock;       /* Lock for clock_hand. */
-};
-
-struct frame_table frame_table; /* Global table used to check user memory. */
-
--- In swap.h --
-New struct swap_table:
-/* Swap talbe used to track used disk space. */
-struct swap_table
-{
-  struct block *swap_block;    /* Swap block for paging. */
-  struct bitmap *used_map;     /* Bitmap for free swap pages. */
-  struct lock block_lock;      /* Lock to protect swap_block. */
-  struct lock bitmap_lock;     /* Lock to protect used_map. */
-};
-
-struct swap_table swap_table;  /* Global table tracking swap frames in swap block. */
-
 -- In page.h --
 New struct file_meta:
 /* file metadata for each mmap file*/
@@ -153,25 +108,105 @@ New flags for page table entry
 #define PTE_D 0x40              /* 1=dirty, 0=not dirty (PTEs only). */
 #define PTE_I 0x80              /* 1=pinned, 0=not pinned. */
 
+
 ---- ALGORITHMS ----
 
 >> A2: In a few paragraphs, describe your code for locating the frame,
 >> if any, that contains the data of a given page.
+
+We handle the frame location by considerring the following cases in order.
+
+Case 1: The page table entry (pte) has its present bit (PTE_P) set to 1.
+In this case, the page is stored in a current frame. The location look up
+is handled by hardware MMU.
+
+Case 2: Stack growth. The page fault caused by stack growth is handled by
+a heuristic mechanism. If a page fault occurs and it is recognized as a 
+stack growth page fault, we allocate a new zero page from the user pool
+and install the page (if there is no new page from the user pool, a frame
+eviction happens).
+
+Case 3: Load from file system. In the page fault handler, if the fault page
+has PTE_F bit set, then we know this page has a file replica saved in file
+system. We handle this case by first looking up supplemental page table (spt),
+and get a file metadata entry, which guides us to fetch the page from file
+system and save it into a new frame slot. Eviction may happen if we cannot
+find free frame slot in frame table.
+
+Case 4: Load from swap. If the above three cases doesn't happen and the fault
+page do have a page table entry (pte), we can reach to a conclusion that this
+page is saved in a swap slot. Each process has a supplemental page table, 
+which is used to find the corresponding swap slot in this case. The user can 
+load the page from swap and fill it into a new frame slot (eviction may 
+happen in this case).
 
 
 >> A3: How does your code coordinate accessed and dirty bits between
 >> kernel and user virtual addresses that alias a single frame, or
 >> alternatively how do you avoid the issue?
 
+Our kernel could avoid the problem by only accessing user data through the
+user virtual address, which means every access to user data should hold
+an address in user virtual address space.
+
+
 ---- SYNCHRONIZATION ----
 
 >> A4: When two user processes both need a new frame at the same time,
 >> how are races avoided?
 
+We design a frame table (ft) which contains lots of frame table entries (fte)
+that is one-to-one mapped to frames in user memory pool.
+
+When two processes get new frames from user memory pool at the same time,
+the race condictions are avoided by user meory pool lock, since each process
+has to get the pool lock before allocate new frames.
+
+When two processes both want to get an existing frame by frame eviction, the
+race condictions are avoided by fte lock. For each fte, we design a lock, which
+must be acquired before a process can evict this frame.
+
+In other cases, there is no race condition.
+
+
 ---- RATIONALE ----
 
 >> A5: Why did you choose the data structure(s) that you did for
 >> representing virtual-to-physical mappings?
+
+In our design, physically, a map can be stored in one of the following places:
+
+Case 1. Frame. Every time when we try to access a vitual memory address, we
+have to load the containing page into a frame (which is a memory page) if
+a page fault happens.
+
+Case 2. Swap. Swap entries are used to save pages if the user memory pool
+is completely occupied.
+
+Case 3. File. Some pages may be evicted into files if it is an unmodified 
+executable file or memory mapped file.
+
+Virtual-to-physical mappings for Case 1 is handle by frame table, while
+that for Case 2 and Case 3 is handled by supplemental page table.
+
+We design a frame table (ft) which contains lots of frame table entries (fte)
+that is one-to-one mapped to frames in user memory pool. We add a lock into
+each fte to avoid race conditions. In our design, each fte has its own lock,
+and process only has to acquire lock for the particular frame it is operating
+on (e.g., evicting that frame). This provides parallism by allowing different
+processes evicting different frames in parallel. Processes share the unique
+frame table, which is implemented as an array. Since the members in frame table
+is decided during kernel boot. Array can provide best performance since there
+is no frame inserted into or removed from frame table during user program
+execution.
+
+To keep track fo the mappings from virtual to physical, we design supplemental
+page table (spt), which contains supplemental page table entries (spte)
+representing the location of a page in swap or file system, if the page is not
+present. Each process has its own spt. We choose to use hash table to
+implement spt, since it can provide O(1) time complexity for insertion,
+deletion, and lookup. 
+
 
 		       PAGING TO AND FROM DISK
 		       =======================
@@ -182,18 +217,131 @@ New flags for page table entry
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+-- In frame.h --
+New enum type:
+/* flages for each frame entry */
+enum frame_flags
+{
+    FRM_ASSERT = 0x1,           /* Panic on failure. */
+    FRM_ZERO = 0x2,             /* Zero page contents. */
+    FRM_USER = 0x4,             /* User page. */
+    FRM_MMAP = 0x8              /* Page used for mmap. */
+};
+
+/* Frame table entry */
+struct fte
+{
+  struct thread *thread;        /* Thread that owns this frame table entry. */
+  uint32_t *pte;                /* The beginning virtual address that cooresponds
+                                   to this frame table entry. */
+  struct lock lock;             /* Per entry lock. */
+};
+
+/* Frame table */
+struct frame_table
+{
+  size_t size;                  /* Total number of frames in this frame table */
+  struct fte *frames;           /* Frames in the table */
+  size_t clock_hand;            /* Clock hand for eviciton algorithm. */
+  struct lock clock_lock;       /* Lock for clock_hand. */
+};
+
+struct frame_table frame_table; /* Global table used to check user memory. */
+
+-- In swap.h --
+New struct swap_table:
+/* Swap talbe used to track used disk space. */
+struct swap_table
+{
+  struct block *swap_block;     /* Swap block for paging. */
+  struct bitmap *used_map;      /* Bitmap for free swap pages. */
+  struct lock block_lock;       /* Lock to protect swap_block. */
+  struct lock bitmap_lock;      /* Lock to protect used_map. */
+};
+
+struct swap_table swap_table;  /* Global table tracking swap frames in swap block. */
+
 ---- ALGORITHMS ----
 
 >> B2: When a frame is required but none is free, some frame must be
 >> evicted.  Describe your code for choosing a frame to evict.
 
+We used clock algorithm for frame eviction. Each time the system need to 
+evict a page, it iterate through the frames in frame_table starting from 
+where the clock_hand was last time. For each frame, the algorithm go through 
+the following checks until find an evictable frame.
+
+(1) If the frame is pinned or the frame's lock is held by others, go on.
+(2) If the frame/page is accessed recently (pte's PTE_A is set), reset the 
+page's access bit and go on to next frame.
+(3) If the frame is not accessed recently but dirty, write page back to file
+if it's mmapped or write it to swap slot if it from exec. file or non-file, 
+then set spte accordingly, reset dirty bit and go on to next frame.
+(4) If the frame is neither accessed recently nor dirty, it's evictable. We
+need to write it to a swap slot if the page is from non-file and set spte
+accordingly. Now, a frame has been successfully evicted and free to use.
+
 >> B3: When a process P obtains a frame that was previously used by a
 >> process Q, how do you adjust the page table (and any other data
 >> structures) to reflect the frame Q no longer has?
 
+In our design, each physical page in user pool is represented by a frame
+table entry. Each frame table entry records the owner thread of the physical 
+frame and the page table entry corresponding to it. Status of a page is 
+stored in the last 12 bits (FLAGS) of its page table entry, i.e. whether it 
+is a file page, an executable file page or a pinned page etc. From a thread's 
+supplemental page table (a hash table) and its page's pte, we can find the 
+page's spte, which stores the eviction related information such as the file 
+source or swap slot number etc. 
+
+                                SPTE, t->spt[index]
+                               -----------------------
+                        SPT - | uint32_t *pte         |
+         FTE          /       | struct daddr daddr  - - -> swap slot or file
+   ----------------- /        | struct hash_elem elem |
+  | struct thread *t |         ---------------------- \
+  | uint32_t *pte    |                                 | (hash)
+   --------------- \-                PTE              /
+                    \   -----------------------------
+                     \ | 20bit PhyAddr | 12bit FLAGS |
+                        -----------------------------
+
+Firstly, process Q's corresponding virtual page is set as unpresent 
+(i.e. PTE_P bit is 0) and the page is written back to file or swap slot if 
+necessary. The address of the page in file or swap disk is recorded in 
+the page's corresponding spte. Thus, next time the process Q's page is 
+accessed a page fault will be trigured.
+
+Secondly, the frame entry is modified to point to process P's page's PTE and
+also owner thread becomes thread P.
+
 >> B4: Explain your heuristic for deciding whether a page fault for an
 >> invalid virtual address should cause the stack to be extended into
 >> the page that faulted.
+
+In struct thread, we add a new field (void *esp) to keep track of the
+esp register at the initial transition when a process swaps from user
+mode to kernel mode. In syscall handler, we set thread->esp to be the
+value esp register for user stack. By this new field, we can always
+get the value of esp register for user stack, whether we are in user
+mode or kernel mode.
+
+Our heuristic algorithm decides whether a page fault should cause
+stack growth be checking the following conditions:
+( In the following code, fault_addr is the invalide virtual address,
+while esp is the esp register for user stack )
+
+1. (fault_addr == esp - 4)          /* case for PUSH op */
+   or (fault_addr == esp - 32)      /* case for PUSHA op */
+   or (fault_addr >= esp)           /* case for MOV and SUB op*/
+
+2. fault_addr >= PHYS_BASE - 8MB    /* stack size cannot extends 8MB*/
+
+3. page table entry (pte) is null   /* stack growth case */
+   or pte hasn't been loaded        /* laze load case */
+   
+If the above three criteria are satisfied, the heuristic algorithm 
+considers this page fault as a case for stack extension.
 
 ---- SYNCHRONIZATION ----
 
@@ -201,6 +349,41 @@ New flags for page table entry
 >> particular, explain how it prevents deadlock.  (Refer to the
 >> textbook for an explanation of the necessary conditions for
 >> deadlock.)
+
+The synchronization primitives we used are as following:
+(1) Per thread supplemental page table lock. 
+  Each thread has a suppl. page table and each SPT has a lock to realize 
+  critical section for spte, especially to prevent non-atomic modificatons of 
+  spte during evictions.
+(2) Per entry frame table entry lock. 
+  Each frame entry has a per-entry lock to prevent two threads from evicting 
+  the same frame. Each time a thread examines a evicting candidate frame, the 
+  frame is guarded by its FTE's lock.
+(3) Global file system lock. 
+  Each operation on file system, such as file open, file read, write or seek, 
+  is protected by a single filesys_lock.
+(4) Global pin lock. 
+  Since PTE can be accessed in more than one place and by more than one thread, 
+  a pin lock is used whenever we need to set or reset a page's PTE. It is also 
+  used together with the pin cond.
+(5) Global pin condition variable. 
+  A page is pinned to prevent page faults occurances while a device driver 
+  accesses a user bufferer passed to file_read, file_write etc. Once the 
+  operation on the page is finished, the page is unpinned intermediately. 
+  A conditional variable is used to avoid busy waiting for a pte pinning 
+  operation.
+(6) Swap table bitmap and block locks. 
+  Two locks are used only inside swap.c methods to realize atomic operation 
+  on the swap bitmap and swap block.
+(7) Frame table clock_hand lock. 
+  frame_table has a lock used solely for atmoic look up and increment of 
+  clock_hand.
+
+We prevent deadlock by eliminate circularity of requests and ownership. 
+We set an fixed ordering of all lock acquires (lock releases are in inverse 
+order). Lock (1) is always acquired first, (2) afterwards and (3) at last.
+Locks (3)~(7) are lowest level locks, i.e. there is no lock acquires when a
+thread holds any lock of (3)~(7).
 
 >> B6: A page fault in process P can cause another process Q's frame
 >> to be evicted.  How do you ensure that Q cannot access or modify
@@ -212,11 +395,35 @@ New flags for page table entry
 >> cannot interfere by e.g. attempting to evict the frame while it is
 >> still being read in?
 
+When process P is loading a page from file or swap during a page fault,
+the PTE of the to-be-loaded page is pinned, i.e. PTE_I set to 1. Thus,
+when process Q examines the corresponding frame to process P's page, it
+will skip the frame since it is pinned.
+
+Only after process P finishes the page loading, is the page unpinned and
+the corresponding frame can be candidates to eviction.
+
 >> B8: Explain how you handle access to paged-out pages that occur
 >> during system calls.  Do you use page faults to bring in pages (as
 >> in user programs), or do you have a mechanism for "locking" frames
 >> into physical memory, or do you use some other design?  How do you
 >> gracefully handle attempted accesses to invalid virtual addresses?
+
+We check user provided addresses before accessing them. If the user page is 
+valid and paged out, the page will be loaded from file or swap; otherwise, 
+the user thread will exit with -1. The check is realized by examing the user 
+address (whether it is NULL pointer or in kernel memory), corresponding
+page's PTE entry flags and its supplemental page entry if there is any.
+Actually, in check_user_memory, if we find the page corresponding to user 
+provided address is not NULL and in user memory, a simulated page fault is 
+triguered by calling _page_fault, which will grow the stack, load the page 
+from file or swap if necessary.
+
+As to file system calls such as read and write, the pages are also pinned if
+they are valid. Therefore, those pages cannot be evicted during the system call
+which prevents deadlocks - system call holds the global file system lock while
+page fault happens in system call memory access and require file system lock to
+read in page file.
 
 ---- RATIONALE ----
 
@@ -226,6 +433,8 @@ New flags for page table entry
 >> possibility for deadlock but allows for high parallelism.  Explain
 >> where your design falls along this continuum and why you chose to
 >> design it this way.
+
+
 
 			 MEMORY MAPPED FILES
 			 ===================
