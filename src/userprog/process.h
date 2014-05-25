@@ -14,7 +14,8 @@ bool get_file_name (char *cmd_line, char *file_name);
 bool argument_passing (char *argv, void **esp);
 bool calculate_len (char *argv, int *argc, int *len);
 bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
-                   uint32_t read_bytes, uint32_t zero_bytes, bool writable, bool executable);
+                   uint32_t read_bytes, uint32_t zero_bytes,
+                   bool writable, bool executable);
 
 struct start_status
 {
