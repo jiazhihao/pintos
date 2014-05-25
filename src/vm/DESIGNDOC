@@ -232,7 +232,7 @@ enum frame_flags
 struct fte
 {
   struct thread *thread;        /* Thread that owns this frame table entry. */
-  uint32_t *pte;                /* The beginning virtual address that cooresponds
+  uint32_t *pte;                /* The beginning virtual address cooresponding
                                    to this frame table entry. */
   struct lock lock;             /* Per entry lock. */
 };
@@ -259,7 +259,8 @@ struct swap_table
   struct lock bitmap_lock;      /* Lock to protect used_map. */
 };
 
-struct swap_table swap_table;  /* Global table tracking swap frames in swap block. */
+struct swap_table swap_table;  /* Global table tracking swap frames 
+                                  in swap block. */
 
 ---- ALGORITHMS ----
 
