@@ -246,6 +246,41 @@ also owner thread becomes thread P.
 >> textbook for an explanation of the necessary conditions for
 >> deadlock.)
 
+The synchronization primitives we used are as following:
+(1) Per thread supplemental page table lock. 
+  Each thread has a suppl. page table and each SPT has a lock to realize 
+  critical section for spte, especially to prevent non-atomic modificatons of 
+  spte during evictions.
+(2) Per entry frame table entry lock. 
+  Each frame entry has a per-entry lock to prevent two threads from evicting 
+  the same frame. Each time a thread examines a evicting candidate frame, the 
+  frame is guarded by its FTE's lock.
+(3) Global file system lock. 
+  Each operation on file system, such as file open, file read, write or seek, 
+  is protected by a single filesys_lock.
+(4) Global pin lock. 
+  Since PTE can be accessed in more than one place and by more than one thread, 
+  a pin lock is used whenever we need to set or reset a page's PTE. It is also 
+  used together with the pin cond.
+(5) Global pin condition variable. 
+  A page is pinned to prevent page faults occurances while a device driver 
+  accesses a user bufferer passed to file_read, file_write etc. Once the 
+  operation on the page is finished, the page is unpinned intermediately. 
+  A conditional variable is used to avoid busy waiting for a pte pinning 
+  operation.
+(6) Swap table bitmap and block locks. 
+  Two locks are used only inside swap.c methods to realize atomic operation 
+  on the swap bitmap and swap block.
+(7) Frame table clock_hand lock. 
+  frame_table has a lock used solely for atmoic look up and increment of 
+  clock_hand.
+
+We prevent deadlock by eliminate circularity of requests and ownership. 
+We set an fixed ordering of all lock acquires (lock releases are in inverse 
+order). Lock (1) is always acquired first, (2) afterwards and (3) at last.
+Locks (3)~(7) are lowest level locks, i.e. there is no lock acquires when a
+thread holds any lock of (3)~(7).
+
 >> B6: A page fault in process P can cause another process Q's frame
 >> to be evicted.  How do you ensure that Q cannot access or modify
 >> the page during the eviction process?  How do you avoid a race
