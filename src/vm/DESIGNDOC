@@ -341,14 +341,79 @@ read in page file.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+--thread.h--
+New struct:
+/* Mmap table entry */
+struct mte
+{
+  void *vaddr;                          /* The start addr of this map */
+  size_t size;                          /* The mapped page count */
+};
+
+New member:
+struct thread
+{
+  struct mte *mt;                     /* Mmap table */
+  int mt_size;                        /* Mmap table size */
+}
+
 ---- ALGORITHMS ----
 
 >> C2: Describe how memory mapped files integrate into your virtual
 >> memory subsystem.  Explain how the page fault and eviction
 >> processes differ between swap pages and other pages.
 
+In the page table entry, if a page is mapped page, the pte will have the PTE_F
+bit set. This bit means that this page comes from a file. If the PTE_E bit is
+not set, which means this page does not come from executable file, and the
+PTE_F bit is set, then the system know this page is a mapped page. During page
+fault and eviction, the system can access the page table entry and check these
+bits to know what kind the page is.
+
+To locate the mmap id, we add a mmap table "mt" in the thread struct. So this
+table is per thread. The entry of this table contains the vaddr thas is passed
+to mmap function by the user, and a size which is the size of the mapped file.
+The mmap table is an array with entries of struct mte, and the array can
+dynamically extend its size. Since the mmap table is very similar to a file
+descriptor table, so we actually reuse most of the code of the file descriptor
+table. When adding new entry, the table will do a first fit and return the
+entry index as the mmap id, and if there is no enough space, the table will
+apply a double size of space and copy everything to the new space. Since
+pintos does not have a good malloc (current malloc just assign a whole page),
+our design will have better memory usage, while still maintain the amortized
+time complexity O(1).
+
+Mmap reuses the code of load_segment which is previously used to load
+executable file. The mmap function does some basic check, reopen the file,
+call a load_segment and then create the mmap table entry. Actually, the only
+difference between a mmap and loading executable is that loading executable
+will set the PTE_E bit in pte while mmap does not set that bit. So mmap
+will also create the relevant supplemental page table entry which stores the
+file, offset and readbytes. Each mapped page will have an spte. The read_bytes
+is used to record how many bytes should be read from file, and how many bytes
+should be set to 0.
+
+Munmap use the map id to find the mte and get the vaddr and size. Then we can
+get all the pte's from vaddr to vaddr+size, and from pte we can get the spte.
+From spte, we can get the file pointer. This is why we do not store file
+pointer in mte. Now we can loop from vaddr to vaddr+size, if the pte has PTE_P
+bit set and PTE_D bit set, then we write this page back to file and free that
+page. Then we delete all the relevant spte and set the pte to 0. Then delete
+mte.
+
+The page fault handler will check the PTE_F bit, if set then it load that page
+from file, using the information in the relevant spte. In eviction, it will
+write the page back to file if PTE_D is set. Notice that the spte's relevant
+to the mmap is only deleted in munmap.
+
 >> C3: Explain how you determine whether a new file mapping overlaps
 >> any existing segment.
+
+In the system, a thread's page table entry changes from zero to non-zero with
+some bits set in its flag, and only changes from non-zero to zero in munmap.
+So we can just check whether the page table entry is 0 to determin whether
+this virtual page is already be reserved for other use, like stack, code or
+other mmaps.
 
 ---- RATIONALE ----
 
@@ -358,6 +423,27 @@ read in page file.
 >> that much of their implementation can be shared.  Explain why your
 >> implementation either does or does not share much of the code for
 >> the two situations.
+
+The mmap is very similar to loading executable file, so we reuse load_segment
+in mmap. The only difference is that in mmap, we do not set PTE_E bit.
+
+In munmap, since there is no relevant in the process of executable file, this
+part is new implemented.
+
+In page fault, once the PTE_F bit is set, this page should come from a file,
+either executable or mapped file. And the process is exactly same, so we only
+have one function called load_from_file to deal with this. In this part the
+code is shared between executable and mapped file.
+
+In eviction, the mapped file and executable are different. The mapped page
+should be write back to file when dirty while the executable page should be
+write to swap. So this part does not share much code. And once an executable
+page goes to swap, its pte will reset the PTE_F and PTE_E bits, because this
+page will never go back to executable file and will never come from executable
+again. This page will be processed just like a stack page. Next time it will
+call load_from_swap instead of load_from_file when page fault. But a mapped
+page's pte will always have the PTE_F bit set until unmapped. So that page
+always goes to file when evict and always comes from file when page fault.
 
 			   SURVEY QUESTIONS
 			   ================
