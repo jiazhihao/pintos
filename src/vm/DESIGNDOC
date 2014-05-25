@@ -395,9 +395,15 @@ To ensure that Q cannot acess or modify the page during the eviction process,
 P should garuantee it first set the PTE_P bit of the containg page to be 0
 before taking any other operation. To be more precise, when P decided to
 evict Q's frame that holding page X. P first set X's PTE_P bit to be 0, which
-will cause Q page fault if Q tries to access page X. Moreover, P has to pin
-page X before evicting page X and unpin it after eviction complete. On Q's
-side 
+will cause Q page fault if Q tries to access page X. Therefore, it is
+garuanteed that Q cannot access or modify the page during the eviction process.
+
+Moreover, P has to pin page X before evicting page X and unpin it after
+eviction complete. On Q's side, if Q gets a page fault on page X, it first
+waits on X to be unpinned before taking any operation for page fault.
+Therefore, it is garuanteed that there is no race between Pevicting X and
+Q faulting X back in ( in this case, we can consider PTE_P bit as a lock
+that avoid race condition between P and Q).
 
 
 >> B7: Suppose a page fault in process P causes a page to be read from
