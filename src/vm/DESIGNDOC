@@ -153,25 +153,105 @@ New flags for page table entry
 #define PTE_D 0x40              /* 1=dirty, 0=not dirty (PTEs only). */
 #define PTE_I 0x80              /* 1=pinned, 0=not pinned. */
 
+
 ---- ALGORITHMS ----
 
 >> A2: In a few paragraphs, describe your code for locating the frame,
 >> if any, that contains the data of a given page.
+
+We handle the frame location by considerring the following cases in order.
+
+Case 1: The page table entry (pte) has its present bit (PTE_P) set to 1.
+In this case, the page is stored in a current frame. The location look up
+is handled by hardware MMU.
+
+Case 2: Stack growth. The page fault caused by stack growth is handled by
+a heuristic mechanism. If a page fault occurs and it is recognized as a 
+stack growth page fault, we allocate a new zero page from the user pool
+and install the page (if there is no new page from the user pool, a frame
+eviction happens).
+
+Case 3: Load from file system. In the page fault handler, if the fault page
+has PTE_F bit set, then we know this page has a file replica saved in file
+system. We handle this case by first looking up supplemental page table (spt),
+and get a file metadata entry, which guides us to fetch the page from file
+system and save it into a new frame slot. Eviction may happen if we cannot
+find free frame slot in frame table.
+
+Case 4: Load from swap. If the above three cases doesn't happen and the fault
+page do have a page table entry (pte), we can reach to a conclusion that this
+page is saved in a swap slot. Each process has a supplemental page table, 
+which is used to find the corresponding swap slot in this case. The user can 
+load the page from swap and fill it into a new frame slot (eviction may 
+happen in this case).
 
 
 >> A3: How does your code coordinate accessed and dirty bits between
 >> kernel and user virtual addresses that alias a single frame, or
 >> alternatively how do you avoid the issue?
 
+Our kernel could avoid the problem by only accessing user data through the
+user virtual address, which means every access to user data should hold
+an address in user virtual address space.
+
+
 ---- SYNCHRONIZATION ----
 
 >> A4: When two user processes both need a new frame at the same time,
 >> how are races avoided?
 
+We design a frame table (ft) which contains lots of frame table entries (fte)
+that is one-to-one mapped to frames in user memory pool.
+
+When two processes get new frames from user memory pool at the same time,
+the race condictions are avoided by user meory pool lock, since each process
+has to get the pool lock before allocate new frames.
+
+When two processes both want to get an existing frame by frame eviction, the
+race condictions are avoided by fte lock. For each fte, we design a lock, which
+must be acquired before a process can evict this frame.
+
+In other cases, there is no race condition.
+
+
 ---- RATIONALE ----
 
 >> A5: Why did you choose the data structure(s) that you did for
 >> representing virtual-to-physical mappings?
+
+In our design, physically, a map can be stored in one of the following places:
+
+Case 1. Frame. Every time when we try to access a vitual memory address, we
+have to load the containing page into a frame (which is a memory page) if
+a page fault happens.
+
+Case 2. Swap. Swap entries are used to save pages if the user memory pool
+is completely occupied.
+
+Case 3. File. Some pages may be evicted into files if it is an unmodified 
+executable file or memory mapped file.
+
+Virtual-to-physical mappings for Case 1 is handle by frame table, while
+that for Case 2 and Case 3 is handled by supplemental page table.
+
+We design a frame table (ft) which contains lots of frame table entries (fte)
+that is one-to-one mapped to frames in user memory pool. We add a lock into
+each fte to avoid race conditions. In our design, each fte has its own lock,
+and process only has to acquire lock for the particular frame it is operating
+on (e.g., evicting that frame). This provides parallism by allowing different
+processes evicting different frames in parallel. Processes share the unique
+frame table, which is implemented as an array. Since the members in frame table
+is decided during kernel boot. Array can provide best performance since there
+is no frame inserted into or removed from frame table during user program
+execution.
+
+To keep track fo the mappings from virtual to physical, we design supplemental
+page table (spt), which contains supplemental page table entries (spte)
+representing the location of a page in swap or file system, if the page is not
+present. Each process has its own spt. We choose to use hash table to
+implement spt, since it can provide O(1) time complexity for insertion,
+deletion, and lookup. 
+
 
 		       PAGING TO AND FROM DISK
 		       =======================
@@ -194,6 +274,30 @@ New flags for page table entry
 >> B4: Explain your heuristic for deciding whether a page fault for an
 >> invalid virtual address should cause the stack to be extended into
 >> the page that faulted.
+
+In struct thread, we add a new field (void *esp) to keep track of the
+esp register at the initial transition when a process swaps from user
+mode to kernel mode. In syscall handler, we set thread->esp to be the
+value esp register for user stack. By this new field, we can always
+get the value of esp register for user stack, whether we are in user
+mode or kernel mode.
+
+Our heuristic algorithm decides whether a page fault should cause
+stack growth be checking the following conditions:
+( In the following code, fault_addr is the invalide virtual address,
+while esp is the esp register for user stack )
+
+1. (fault_addr == esp - 4)          /* case for PUSH op */
+   or (fault_addr == esp - 32)      /* case for PUSHA op */
+   or (fault_addr >= esp)           /* case for MOV and SUB op*/
+
+2. fault_addr >= PHYS_BASE - 8MB    /* stack size cannot extends 8MB*/
+
+3. page table entry (pte) is null   /* stack growth case */
+   or pte hasn't been loaded        /* laze load case */
+   
+If the above three criteria are satisfied, the heuristic algorithm 
+considers this page fault as a case for stack extension.
 
 ---- SYNCHRONIZATION ----
 
