@@ -42,9 +42,9 @@ swap_free_page (struct swap_table *swap_table, size_t swap_page_no)
 void 
 swap_read_page (struct swap_table *swap_table, size_t swap_page_no, void *buf)
 {
-  ASSERT (bitmap_test (swap_table->used_map, swap_page_no) == true);
   int i;
   lock_acquire (&swap_table->block_lock);
+  ASSERT (bitmap_test (swap_table->used_map, swap_page_no) == true);
   for (i = 0; i < SECTORS_PER_PAGE; i++)
   {
     block_read (swap_table->swap_block, swap_page_no*SECTORS_PER_PAGE+i, buf);
@@ -57,9 +57,9 @@ swap_read_page (struct swap_table *swap_table, size_t swap_page_no, void *buf)
 void
 swap_write_page (struct swap_table *swap_table, size_t swap_page_no, void *buf)
 {
-  ASSERT (bitmap_test (swap_table->used_map, swap_page_no) == true);
   int i;
   lock_acquire (&swap_table->block_lock);
+  ASSERT (bitmap_test (swap_table->used_map, swap_page_no) == true);
   for (i = 0; i < SECTORS_PER_PAGE; i++)
   {
     block_write (swap_table->swap_block, swap_page_no*SECTORS_PER_PAGE+i, buf);

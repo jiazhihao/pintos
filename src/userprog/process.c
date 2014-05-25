@@ -76,7 +76,7 @@ process_execute (const char *cmd_line)
   }
   else
   {
-    return -1;
+    return process_wait(tid);
   }
 }
 
@@ -117,6 +117,7 @@ start_process (void *aux)
   sema_up (&start->sema);
   if (!success)
     thread_exit ();
+  
 
   /* Start the user process by simulating a return from an
   interrupt, implemented by intr_exit (in
@@ -349,9 +350,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
-  lock_acquire (&filesys_lock);
   /* Open executable file. */
+  lock_acquire (&filesys_lock);
   file = filesys_open (file_name);
+  lock_release (&filesys_lock);
   t->exec_file = file;
   if (file == NULL)
   {
@@ -360,6 +362,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   }
 
   /* Read and verify executable header. */
+  lock_acquire (&filesys_lock);
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
       || ehdr.e_type != 2
@@ -368,22 +371,34 @@ load (const char *file_name, void (**eip) (void), void **esp)
       || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
       || ehdr.e_phnum > 1024)
   {
+    lock_release (&filesys_lock);
     printf ("load: %s: error loading executable\n", file_name);
     goto done;
   }
-
+  lock_release (&filesys_lock);
+  
   /* Read program headers. */
   file_ofs = ehdr.e_phoff;
   for (i = 0; i < ehdr.e_phnum; i++)
   {
     struct Elf32_Phdr phdr;
 
+    lock_acquire (&filesys_lock);
     if (file_ofs < 0 || file_ofs > file_length (file))
+    {
+      lock_release (&filesys_lock);
       goto done;
+    }
     file_seek (file, file_ofs);
+    lock_release (&filesys_lock);
 
+    lock_acquire (&filesys_lock);
     if (file_read (file, &phdr, sizeof phdr) != sizeof phdr)
+    {
+      lock_release (&filesys_lock);
       goto done;
+    }
+    lock_release (&filesys_lock);
     file_ofs += sizeof phdr;
     switch (phdr.p_type)
     {
@@ -421,14 +436,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
           read_bytes = 0;
           zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
         }
-        lock_release (&filesys_lock);
         if (!load_segment (file, file_page, (void *)mem_page,
                            read_bytes, zero_bytes, writable, true))
         {
-          lock_acquire (&filesys_lock);
           goto done;
         }
-        lock_acquire (&filesys_lock);
       }
       else
         goto done;
@@ -447,7 +459,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
 done:
   /* We arrive here whether the load is successful or not. */
-  lock_release (&filesys_lock);
   return success;
 }
 
@@ -552,13 +563,17 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     daddr.file_meta.file = file;
     daddr.file_meta.offset = ofs;
     daddr.file_meta.read_bytes = page_read_bytes; 
+    //printf ("thread (%d): bef ACQ spt.lock.load_segment1.\n", thread_current()->tid); 
     lock_acquire (&cur->spt.lock);
+    //printf ("thread (%d): aft ACQ spt.lock.load_segment1.\n", thread_current()->tid); 
     if (!spt_insert (&cur->spt, pte, &daddr))
     {
       lock_release (&cur->spt.lock);
+      //printf ("thread (%d): aft REL spt.lock.load_segment.\n", thread_current()->tid); 
       goto fail;
     }
     lock_release (&cur->spt.lock);
+    //printf ("thread (%d): aft REL spt.lock.load_segment.\n", thread_current()->tid); 
     ofs += page_read_bytes;
     /* Advance. */
     read_bytes -= page_read_bytes;
@@ -570,12 +585,15 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 fail:
   if (upage > input_page)
   {
+    //printf ("thread (%d): bef ACQ spt.lock.load_segment2.\n", thread_current()->tid); 
     lock_acquire (&cur->spt.lock);
+    //printf ("thread (%d): aft ACQ spt.lock.load_segment2.\n", thread_current()->tid); 
     for (upage -= PGSIZE; upage >= input_page; upage -= PGSIZE)
     {
       spt_delete (&cur->spt, lookup_page (cur->pagedir, upage, false));
     }
     lock_release (&cur->spt.lock);
+    //printf ("thread (%d): aft REL spt.lock.load_segment2.\n", thread_current()->tid); 
   }
   return false;
 }
