@@ -8,9 +8,9 @@
 
 >> Fill in the names and email addresses of your group members.
 
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
+Ruizhongtai Qi <rqi@stanford.edu>
+Zhihao Jia <zhihao@stanford.edu>
+Tai Guo <taig@stanford.edu>
 
 ---- PRELIMINARIES ----
 
@@ -390,6 +390,15 @@ thread holds any lock of (3)~(7).
 >> the page during the eviction process?  How do you avoid a race
 >> between P evicting Q's frame and Q faulting the page back in?
 
+To ensure that Q cannot acess or modify the page during the eviction process,
+P should garuantee it first set the PTE_P bit of the containg page to be 0
+before taking any other operation. To be more precise, when P decided to
+evict Q's frame that holding page X. P first set X's PTE_P bit to be 0, which
+will cause Q page fault if Q tries to access page X. Moreover, P has to pin
+page X before evicting page X and unpin it after eviction complete. On Q's
+side 
+
+
 >> B7: Suppose a page fault in process P causes a page to be read from
 >> the file system or swap.  How do you ensure that a second process Q
 >> cannot interfere by e.g. attempting to evict the frame while it is
@@ -434,6 +443,31 @@ read in page file.
 >> where your design falls along this continuum and why you chose to
 >> design it this way.
 
+We carefully choose sychronization primitives to achieve a sweet point of
+complexities and high parallelism/performance. In our design, while one
+page fault requires I/O, in the meantime processes that do not fault and 
+other page faults that do not require I/O can continue to execute. Also,
+our system supports one thread paging out a frame while the other thread
+reads in a page into another frame. 
+
+For different data structures we use lock of various levels of fineness, from
+global file system lock to per entry frame table lock. More details of our 
+choice and design of synchronizations are as below.
+
+(1) Frame Table.
+We initialize a global frame table as an fixed size array. Each entry of the 
+frame table has a lock. The per entry lock allows high parallelism and by 
+keeping a well defined order of locks we can successfully avoid deadlocks. When
+one thread is evicting a frame, it acquired and holds the frame entry lock so 
+that other threads can continue withouth intefering it from eviction.
+(2) Supplemental Page Table.
+Since we realized SPTs as hash tables, which are based on list and hash 
+functions. Operations on hash tables will modify the structure of the whole
+table so that we assign a single lock for each table.
+(3) File System Lock.
+We used a global file system lock due to the limit of current file system. Any
+file system operation is protected by the global filesys_lock. Since we need to 
+access a single file system, we have to have a global lock for it.
 
 
 			 MEMORY MAPPED FILES

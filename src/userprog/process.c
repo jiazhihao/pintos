@@ -564,17 +564,13 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     daddr.file_meta.file = file;
     daddr.file_meta.offset = ofs;
     daddr.file_meta.read_bytes = page_read_bytes; 
-    //printf ("thread (%d): bef ACQ spt.lock.load_segment1.\n", thread_current()->tid); 
     lock_acquire (&cur->spt.lock);
-    //printf ("thread (%d): aft ACQ spt.lock.load_segment1.\n", thread_current()->tid); 
     if (!spt_insert (&cur->spt, pte, &daddr))
     {
       lock_release (&cur->spt.lock);
-      //printf ("thread (%d): aft REL spt.lock.load_segment.\n", thread_current()->tid); 
       goto fail;
     }
     lock_release (&cur->spt.lock);
-    //printf ("thread (%d): aft REL spt.lock.load_segment.\n", thread_current()->tid); 
     ofs += page_read_bytes;
     /* Advance. */
     read_bytes -= page_read_bytes;
@@ -586,9 +582,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 fail:
   if (upage > input_page)
   {
-    //printf ("thread (%d): bef ACQ spt.lock.load_segment2.\n", thread_current()->tid); 
     lock_acquire (&cur->spt.lock);
-    //printf ("thread (%d): aft ACQ spt.lock.load_segment2.\n", thread_current()->tid); 
     for (upage -= PGSIZE; upage >= input_page; upage -= PGSIZE)
     {
       pte = lookup_page (cur->pagedir, upage, false);
@@ -596,7 +590,6 @@ fail:
       *pte = 0;
     }
     lock_release (&cur->spt.lock);
-    //printf ("thread (%d): aft REL spt.lock.load_segment2.\n", thread_current()->tid); 
   }
   return false;
 }
