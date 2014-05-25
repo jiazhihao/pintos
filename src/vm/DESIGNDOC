@@ -390,6 +390,15 @@ thread holds any lock of (3)~(7).
 >> the page during the eviction process?  How do you avoid a race
 >> between P evicting Q's frame and Q faulting the page back in?
 
+To ensure that Q cannot acess or modify the page during the eviction process,
+P should garuantee it first set the PTE_P bit of the containg page to be 0
+before taking any other operation. To be more precise, when P decided to
+evict Q's frame that holding page X. P first set X's PTE_P bit to be 0, which
+will cause Q page fault if Q tries to access page X. Moreover, P has to pin
+page X before evicting page X and unpin it after eviction complete. On Q's
+side 
+
+
 >> B7: Suppose a page fault in process P causes a page to be read from
 >> the file system or swap.  How do you ensure that a second process Q
 >> cannot interfere by e.g. attempting to evict the frame while it is

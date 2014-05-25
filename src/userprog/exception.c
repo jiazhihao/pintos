@@ -159,9 +159,8 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  //printf("page fault at %x\n", fault_addr);
-
-  /* syscall::_page_fault pins the page, therefore we need to unpin it after
+  /* syscall::_page_fault assumes the fault pages is pin before invocation,
+   * therefore we need to pin it before _page_fault, and unpin it after
    * return. The reason we pin the page in _page_fault is because, when
    * kernel tries to access user_memory, we need to pin all user meory pages
    * in order to avoid user memory page fault in kernel mode.*/
@@ -171,9 +170,8 @@ page_fault (struct intr_frame *f)
     return;
   }
   unpin_multiple(fault_addr, 1);
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
+
+  /* If the page fault happens due to bad virtual address, kill the process.*/
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",

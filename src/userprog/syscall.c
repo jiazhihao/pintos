@@ -41,15 +41,17 @@ static bool load_page_from_file (uint32_t *);
 static bool load_page_from_swap (uint32_t *);
 static bool stack_growth (void *);
 
-
+/* Lock for file system*/
 extern struct lock filesys_lock;
 
+/* Initialization function for syscall. */
 void
 syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
+/* syscall handler*/
 static void
 syscall_handler (struct intr_frame *f UNUSED)
 {
@@ -450,6 +452,8 @@ static mapid_t _mmap (int fd, void *addr)
   return mapid;
 }
 
+/* Pin multiple pages. The pages that contains (VADDR, VADDR + SIZE) should be
+ * pinned before return. */
 size_t
 pin_multiple (const void *vaddr, size_t size)
 {
@@ -475,6 +479,8 @@ pin_multiple (const void *vaddr, size_t size)
   return size;
 }
 
+/* Unpin multiple pages. The pages that contains (VADDR, VADDR + SIZE) should be
+ * unpinned before return. */
 void unpin_multiple (const void *vaddr, size_t size)
 {
   struct thread *cur = thread_current ();
@@ -630,11 +636,14 @@ static void mt_rm (struct thread *t, mapid_t mapid)
   }
 }
 
+/* Return true if mte is empty, false otherwise. */
 bool mte_empty (struct mte *mte)
 {
   return mte->vaddr == NULL && mte->size == 0;
 }
 
+/* Return mte entry with memory map id MAPID for
+ * thread T. */
 struct mte *mt_get (struct thread *t, mapid_t mapid)
 {
   if (mapid >= 0 && mapid < t->mt_size)
@@ -643,7 +652,8 @@ struct mte *mt_get (struct thread *t, mapid_t mapid)
     return NULL;
 }
 
-/* Return true if we can successfully access the page, false ow.*/
+/* The function that handles page fault. Return true if we can successfully
+ * access the page, false ow. */
 
 bool
 _page_fault (void *intr_esp, void *fault_addr)
@@ -662,21 +672,6 @@ _page_fault (void *intr_esp, void *fault_addr)
   else
     esp = cur->esp;
 
-  /* If we experience page fault on pte, pin it since we need to prevent others from
-   * accessing this page when we are handling page fault. */
-  ASSERT (pte == NULL || (*pte & PTE_I));
-  // TODO(zhihao): remove below?
-  /*
-  lock_acquire(&pin_lock);
-  if (pte != NULL) {
-    while (*pte & PTE_I)
-    {
-      cond_wait(&pin_cond, &pin_lock);
-    }
-    *pte |= PTE_I;
-  }
-  lock_release(&pin_lock);
-  */
   if (pte && (*pte & PTE_P))
   {
     return false;
@@ -707,6 +702,7 @@ _page_fault (void *intr_esp, void *fault_addr)
   return false;
 }
 
+/* Update flags and physical address for a page table entry */
 void
 update_pte (void *kpage, uint32_t *pte, uint32_t flags)
 {
@@ -716,6 +712,8 @@ update_pte (void *kpage, uint32_t *pte, uint32_t flags)
   *pte |= PTE_P;
 }
 
+/* Load a page with page table entry PTE from file system.
+ * Return true if the load succeed, false otherwise */
 static bool
 load_page_from_file (uint32_t *pte)
 {
@@ -752,6 +750,8 @@ load_page_from_file (uint32_t *pte)
   return false;
 }
 
+/* Load a page with page table entry PTE from swap.
+ * Return true if the load succeed, false otherwise */
 static bool
 load_page_from_swap (uint32_t *pte)
 {
@@ -778,6 +778,8 @@ load_page_from_swap (uint32_t *pte)
   return true;
 }
 
+/* Extend stack by adding the page that contains virtual address UPAGE.
+ * Return true if succeed, false otherwise. */
 static bool
 stack_growth (void *upage)
 {
