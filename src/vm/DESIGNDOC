@@ -45,14 +45,6 @@ struct thread
                                          transition from user to kernel*/
 }
 
-New struct mte:
-/* Mmap table entry */
-struct mte
-{
-  void *vaddr;                          /* The start addr of this map */
-  size_t size;                          /* The mapped page count */
-};
-
 -- In page.h --
 New struct file_meta:
 /* file metadata for each mmap file*/
