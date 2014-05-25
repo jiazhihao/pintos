@@ -2,13 +2,16 @@
 #include "lib/debug.h"
 #include "threads/malloc.h"
 
+/* Use the pte as the hash key and the hash function */
 static unsigned spt_hash_func (const struct hash_elem *e, void *aux UNUSED)
 {
   struct spte *spte = hash_entry (e, struct spte, elem);
   return (unsigned)spte->pte;
 }
 
-static bool spt_hash_less (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED)
+/* Compare the key */
+static bool spt_hash_less (const struct hash_elem *a, 
+                           const struct hash_elem *b, void *aux UNUSED)
 {
   struct spte *spte_a = hash_entry (a, struct spte, elem);
   struct spte *spte_b = hash_entry (b, struct spte, elem);
