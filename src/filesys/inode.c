@@ -10,14 +10,25 @@
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 
+#define DIRECT_IDX_CNT (128 - 6)
+#define SECTOR_IDX_CNT (BLOCK_SECTOR_SIZE / 4)
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
   {
-    block_sector_t start;               /* First data sector. */
+    block_sector_t sector;              /* First data sector. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    uint32_t unused[125];               /* Not used. */
+    int is_dir;                         /* 1 if the containing inode
+                                           is a dir, 0 otherwise*/
+    block_sector_t di[DIRECT_IDX_CNT];  /* Direct indexes*/
+    block_sector_t sii;                 /* Single indirect indexes*/
+    block_sector_t dii;                 /* Double indirect indexes*/
+  };
+
+struct indirect_block
+  {
+    block_sector_t idx [SECTOR_IDX_CNT]; /* indexes in an indirect block*/
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -38,6 +49,18 @@ struct inode
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
     struct inode_disk data;             /* Inode content. */
   };
+
+void
+inode_lock (struct inode *inode)
+{
+  lock_acquire (&inode->inode_lock);
+}
+
+void
+inode_unlock (struct inode *inode)
+{
+  lock_release (&inode->inode_lock);
+}
 
 /* Returns the block device sector that contains byte offset POS
    within INODE.
