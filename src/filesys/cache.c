@@ -303,7 +303,18 @@ sector_in_cache (block_sector_t sector, bool to_write)
   {
     entry = &buffer_cache[i];
     lock_acquire (&entry->lock);
-    if (!entry->evicting && entry->sector == sector)
+    if (entry->evicting && entry->sector == sector)
+    {
+      /* CANNOT read sector if it is still being flushed !!!!! */
+      /* The sector may be still flushing.. cannot read yet. */
+      while (entry->evicting)
+      {
+        cond_wait (&entry->ready, &entry->lock);
+      }
+      lock_release (&entry->lock);
+      return -1;
+    }
+    else if (!entry->evicting && entry->sector == sector)
     {
       /* Set waiting flag to prevent the entry from bing evicted. */
       if (to_write)
