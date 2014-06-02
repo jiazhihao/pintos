@@ -256,8 +256,9 @@ read_ahead_daemon (void *aux UNUSED)
 
     void *buffer = malloc (BLOCK_SECTOR_SIZE);
     //printf ("### Start to read ahead sector: %u \n", sector);
-    //cache_read (sector, buffer);
+    cache_read (sector, buffer);
 
+/*
  //////////////////////////////////////////////////
   lock_acquire (&buffer_cache_lock);
   int entry_id = sector_in_cache (sector, false);
@@ -285,7 +286,7 @@ read_ahead_daemon (void *aux UNUSED)
   printf ("### Before cache_read_hit ...\n");
   cache_read_hit (entry_id, buffer, 0, BLOCK_SECTOR_SIZE);
  //////////////////////////////////////////////////
-
+*/
 
     //printf ("### Finish to read ahead sector: %u \n", sector);
     free (buffer);
