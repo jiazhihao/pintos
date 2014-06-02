@@ -21,8 +21,8 @@ struct cache_entry
   block_sector_t new_sector;           /* Sector no of block after eviction. */
   bool accessed;                       /* Whether has been accessed. */
   bool dirty;                          /* Whether has been written. */
-  bool evicting;                       /* Whether being evicted. */
-  bool flushing;                       /* Whether being flushed. */
+  bool evicting;                       /* Entry being evicted. */
+  bool flushing;                       /* Entry being flushed. */
   size_t reader;                       /* Number of active readers. */
   size_t writer;                       /* Number of active writers. */
   size_t waiting_reader;               /* Number of waiting readers. */
@@ -304,35 +304,40 @@ sector_in_cache (block_sector_t sector, bool to_write)
   {
     entry = &buffer_cache[i];
     lock_acquire (&entry->lock);
-    if (entry->evicting && entry->sector == sector)
+    if (entry->sector == sector)
     {
-      /* CANNOT read sector if it is still being flushed !!!!! */
-      /* The sector may be still flushing.. cannot read yet. */
-      while (entry->evicting)
+      if (!entry->evicting)
       {
-        cond_wait (&entry->ready, &entry->lock);
+        /* Set waiting flag to prevent the entry from bing evicted. */
+        if (to_write)
+          entry->waiting_writer++;
+        else
+          entry->waiting_reader++;
+        /* Release buffer_cache_lock before cond_wait. */
+        lock_release (&buffer_cache_lock);
+        /* Wait until flushing finishes. */
+        while (entry->flushing)
+        {
+          cond_wait (&entry->ready, &entry->lock);
+        }
+        lock_release (&entry->lock);
+        return i;
       }
-      lock_release (&entry->lock);
-      return -1;
-    }
-    else if (!entry->evicting && entry->sector == sector)
-    {
-      /* Set waiting flag to prevent the entry from bing evicted. */
-      if (to_write)
-        entry->waiting_writer++;
-      else
-        entry->waiting_reader++;
-      /* Release buffer_cache_lock before cond_wait. */
-      lock_release (&buffer_cache_lock);
-      /* Wait until flushing finishes. */
-      while (entry->flushing)
+      /* The sector is unfortunately being evicted. Wait until flushing
+       * finishes if there is any. */
+      else if (entry->evicting && entry->flushing)
       {
-        cond_wait (&entry->ready, &entry->lock);
+        /* CANNOT read sector if it is still being flushed !!!!! */
+        /* The sector may be still flushing.. cannot read yet. */
+        while (entry->flushing)
+        {
+          cond_wait (&entry->ready, &entry->lock);
+        }
+        lock_release (&entry->lock);
+        return -1;
       }
-      lock_release (&entry->lock);
-      return i;
     }
-    else if (entry->evicting && entry->new_sector == entry->sector)
+    else if (entry->new_sector == entry->sector && entry->evicting)
     {
       /* Set waiting flag to prevent the entry from bing evicted. */
       if (to_write)
@@ -390,12 +395,18 @@ evict_entry_id (block_sector_t new_sector)
       clock_hand_increase_one ();
       if (entry->dirty)
       {
+        entry->flushing = true;
         lock_release (&entry->lock);
         lock_release (&buffer_cache_lock);
         ASSERT (entry->evicting);
         /* IO without holding any locks. */
         block_write (fs_device, entry->sector, entry->content);
         ASSERT (entry->evicting);
+
+        lock_acquire (&entry->lock);
+        entry->dirty = false;
+        entry->flushing = false;
+        lock_release (&entry->lock);
       }
       else
       {
@@ -463,7 +474,6 @@ cache_read_miss (block_sector_t sector, void *buffer, off_t start, off_t len)
   entry->sector = sector;
   entry->new_sector = UINT32_MAX;
   entry->accessed = false;
-  entry->dirty = false;
   entry->evicting = false;
   cond_broadcast (&entry->ready, &entry->lock);
   entry->waiting_reader++;
