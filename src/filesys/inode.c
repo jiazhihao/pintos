@@ -92,7 +92,6 @@ inode_create (block_sector_t sector, off_t length)
       disk_inode->magic = INODE_MAGIC;
       if (free_map_allocate (sectors, &disk_inode->start)) 
         {
-          //block_write (fs_device, sector, disk_inode);
           cache_write (sector, disk_inode);
           if (sectors > 0) 
             {
@@ -100,7 +99,6 @@ inode_create (block_sector_t sector, off_t length)
               size_t i;
               
               for (i = 0; i < sectors; i++) 
-                //block_write (fs_device, disk_inode->start + i, zeros);
                 cache_write (disk_inode->start + i, zeros);
             }
           success = true; 
@@ -208,8 +206,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 {
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
-  //printf ("INODE_READ_AT beg, size: %u, offset: %u, inode_length: %u\n", size, offset, inode_length(inode));
-
 
   while (size > 0) 
     {
@@ -288,7 +284,6 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       size -= chunk_size;
       offset += chunk_size;
       bytes_written += chunk_size;
-      //printf (" write sector： %u\n", sector_idx);
     }
 
   return bytes_written;
