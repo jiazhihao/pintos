@@ -104,7 +104,7 @@ cache_init (void)
 void 
 cache_flush (void)
 {
-  printf ("@@@ Start Flushing.\n");
+  //printf ("@@@ Start Flushing.\n");
   size_t i;
   struct cache_entry *entry;
   for (i = 0; i<BUFFER_CACHE_SIZE; i++)
@@ -122,17 +122,20 @@ cache_flush (void)
       entry->flushing = true;
       lock_release (&entry->lock);
 
+      ASSERT (!entry->evicting);
       /* IO without holding any locks. */
       block_write (fs_device, entry->sector, entry->content);
+      ASSERT (!entry->evicting);
 
       lock_acquire (&entry->lock);
+      ASSERT (!entry->evicting);
       entry->dirty = false;
       entry->flushing = false;
       cond_broadcast (&entry->ready, &entry->lock);
     }
     lock_release (&entry->lock);
   }
-  printf ("@@@ Finish Flushing.\n");
+  //printf ("@@@ Finish Flushing.\n");
 }
 
 /* Background thread that periodically flush the cache. */
@@ -253,8 +256,8 @@ read_ahead_daemon (void *aux UNUSED)
 
     void *buffer = malloc (BLOCK_SECTOR_SIZE);
     //printf ("### Start to read ahead sector: %u \n", sector);
-    cache_read (sector, buffer);
-/*
+    //cache_read (sector, buffer);
+
  //////////////////////////////////////////////////
   lock_acquire (&buffer_cache_lock);
   int entry_id = sector_in_cache (sector, false);
@@ -262,7 +265,7 @@ read_ahead_daemon (void *aux UNUSED)
   {
     printf ("### Before evict_entry_id ...\n");
     entry_id = evict_entry_id (sector);
-    printf ("### After evict_entry_id ...\n");
+    printf ("### After evict_entry_id of sector: %u...\n", buffer_cache[entry_id].sector);
     struct cache_entry *entry = &buffer_cache[entry_id];
     printf ("### Before block_read ...\n");
 
@@ -282,7 +285,7 @@ read_ahead_daemon (void *aux UNUSED)
   printf ("### Before cache_read_hit ...\n");
   cache_read_hit (entry_id, buffer, 0, BLOCK_SECTOR_SIZE);
  //////////////////////////////////////////////////
-*/
+
 
     //printf ("### Finish to read ahead sector: %u \n", sector);
     free (buffer);
@@ -351,7 +354,7 @@ evict_entry_id (block_sector_t new_sector)
     cur_hand = hand;
     entry = &buffer_cache[cur_hand];
     lock_acquire (&entry->lock);
-    if (entry->waiting_reader + entry->waiting_reader + 
+    if (entry->waiting_reader + entry->waiting_writer + 
           entry->reader + entry->writer > 0
           || entry->flushing || entry->evicting)
     {
@@ -377,14 +380,18 @@ evict_entry_id (block_sector_t new_sector)
       {
         lock_release (&entry->lock);
         lock_release (&buffer_cache_lock);
+        ASSERT (entry->evicting);
         /* IO without holding any locks. */
         block_write (fs_device, entry->sector, entry->content);
-      } 
+        ASSERT (entry->evicting);
+      }
       else
       {
         lock_release (&entry->lock);
         lock_release (&buffer_cache_lock);
       }
+      // DEBUG
+      //lock_release (&entry->lock);
       return cur_hand;
     }
     ASSERT (0);
@@ -395,6 +402,9 @@ evict_entry_id (block_sector_t new_sector)
 static void
 cache_read_hit (size_t entry_id, void *buffer, off_t start, off_t len)
 {
+  ASSERT (!buffer_cache[entry_id].evicting);
+  ASSERT (buffer_cache[entry_id].waiting_reader > 0 && buffer_cache[entry_id].writer == 0);
+
   struct cache_entry *entry = &buffer_cache[entry_id];
   lock_acquire (&entry->lock);
   ASSERT (!entry->evicting);
@@ -406,9 +416,13 @@ cache_read_hit (size_t entry_id, void *buffer, off_t start, off_t len)
   entry->reader++;
   lock_release (&entry->lock);
 
+  ASSERT (!entry->evicting);
   memcpy (buffer, entry->content + start, len);
+  ASSERT (!entry->evicting);
+
 
   lock_acquire (&entry->lock);
+  ASSERT (!entry->evicting);
   entry->reader--;
   if (entry->reader == 0 && entry->waiting_writer > 0)
   {
@@ -425,11 +439,15 @@ cache_read_miss (block_sector_t sector, void *buffer, off_t start, off_t len)
 {
   size_t entry_id = evict_entry_id (sector);
   struct cache_entry *entry = &buffer_cache[entry_id];
-
+  
+  ASSERT (entry->writer == 0);
+  ASSERT (entry->evicting);
   /* IO without holding any locks. */
   block_read (fs_device, sector, entry->content);
+  ASSERT (entry->evicting);
 
   lock_acquire (&entry->lock);
+  ASSERT (entry->evicting);
   entry->sector = sector;
   entry->new_sector = UINT32_MAX;
   entry->accessed = false;
@@ -479,7 +497,10 @@ cache_read (block_sector_t sector, void *buffer)
 /* Cache write hit routine: acquire write lock, memcpy, release write lock. */
 static void
 cache_write_hit (size_t entry_id, const void *buffer, off_t start, off_t len)
-{
+{  
+  ASSERT (!buffer_cache[entry_id].evicting);
+  ASSERT (buffer_cache[entry_id].waiting_writer > 0 && buffer_cache[entry_id].reader == 0 && buffer_cache[entry_id].writer == 0);
+
   struct cache_entry *entry = &buffer_cache[entry_id];
   lock_acquire (&entry->lock);
   ASSERT (!entry->evicting);
@@ -491,9 +512,12 @@ cache_write_hit (size_t entry_id, const void *buffer, off_t start, off_t len)
   entry->writer++;
   lock_release (&entry->lock);
 
+  ASSERT (!entry->evicting);
   memcpy (entry->content + start, buffer, len);
+  ASSERT (!entry->evicting);
 
   lock_acquire (&entry->lock);
+  ASSERT (!entry->evicting && entry->writer == 1);
   entry->writer--;
   cond_broadcast (&entry->ready, &entry->lock);
   entry->accessed = true;
@@ -509,6 +533,7 @@ cache_write_miss (block_sector_t sector, const void *buffer, off_t start, off_t 
   size_t entry_id = evict_entry_id (sector);
   struct cache_entry *entry = &buffer_cache[entry_id];
 
+  ASSERT (entry->evicting);
   if (set_to_zero)
   {
     /* Set all content bytes to 0. */
@@ -519,8 +544,10 @@ cache_write_miss (block_sector_t sector, const void *buffer, off_t start, off_t 
     /* IO without holding any locks. */
     block_read (fs_device, sector, entry->content);
   }
+  ASSERT (entry->evicting);
 
   lock_acquire (&entry->lock);
+  ASSERT (entry->evicting);
   entry->sector = sector;
   entry->new_sector = UINT32_MAX;
   entry->evicting = false;
