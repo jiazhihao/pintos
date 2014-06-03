@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <debug.h>
 
-#define BUFFER_CACHE_SIZE 64
+#define BUFFER_CACHE_SIZE 64           /* Number of cache entries. */
 #define CACHE_FLUSH_PERIOD 10          /* Flush period in second. */
 #define CACHE_FLUSH_PERIOD_TICKS (TIMER_FREQ * CACHE_FLUSH_PERIOD)
 
@@ -182,7 +182,8 @@ cache_read_ahead (block_sector_t sector)
   lock_release (&read_ahead_lock);
 }
 
-/* Prevent the daemon from "prefecthing" obsolete sectors. */
+/* Cancel read_ahead task with the same sector number by
+ * removing it from read_ahead queue and free its memory. */
 static void
 read_ahead_cancel (block_sector_t sector)
 {
@@ -193,8 +194,6 @@ read_ahead_cancel (block_sector_t sector)
        e = list_next (e)) 
   {
     task = list_entry (e, struct read_ahead_task, elem);
-    /* Cancel read_ahead task with the same sector number by
-     * removing it from read_ahead queue and free its memory. */
     if (task->sector == sector) 
     {
       list_remove (e);
@@ -205,11 +204,6 @@ read_ahead_cancel (block_sector_t sector)
   }
   lock_release (&read_ahead_lock);
 }
-
-
-static int sector_in_cache (block_sector_t sector, bool to_write);
-static void cache_read_hit (size_t entry_id, void *buffer, off_t start, off_t len);
-static size_t evict_entry_id (block_sector_t new_sector);
 
 /* Background thread that is in charge of prefetching. */
 static void 
@@ -278,6 +272,16 @@ sector_in_cache (block_sector_t sector, bool to_write)
       lock_release (&entry->lock);
       return i;
     }
+    /*
+    if (entry->evicting && entry->sector == sector)
+    {
+      while (entry->flushing)
+      {
+        cond_wait (&entry->ready, &entry->lock);
+      }
+      lock_release (&entry->lock);
+      return -1;
+    }*/
     lock_release (&entry->lock);
   }
   /* Miss: buffer_cache_lock will be released in evict_entry_id. */
@@ -331,6 +335,7 @@ evict_entry_id (block_sector_t new_sector)
         lock_acquire (&entry->lock);
         entry->dirty = false;
         entry->flushing = false;
+        cond_broadcast (&entry->ready, &entry->lock);
         lock_release (&entry->lock);
       }
       else
@@ -380,8 +385,9 @@ wait_until_sector_flushed (block_sector_t sector)
   {
     entry = &buffer_cache[i];
     lock_acquire (&entry->lock);
-    if (entry->sector == sector && entry->evicting)
+    if (entry->sector == sector)
     {
+      ASSERT (entry->evicting);
       while (entry->flushing)
       {
         cond_wait (&entry->ready, &entry->lock);
@@ -451,7 +457,7 @@ cache_read (block_sector_t sector, void *buffer)
 /* Cache write hit routine: acquire write lock, memcpy, release write lock. */
 static void
 cache_write_hit (size_t entry_id, const void *buffer, off_t start, off_t len)
-{  
+{
   struct cache_entry *entry = &buffer_cache[entry_id];
   lock_acquire (&entry->lock);
   while (entry->reader + entry->writer > 0 || entry->flushing)
