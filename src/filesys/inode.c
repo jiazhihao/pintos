@@ -115,7 +115,6 @@ inode_create (block_sector_t sector, off_t length)
       disk_inode->magic = INODE_MAGIC;
       if (free_map_allocate (sectors, &disk_inode->start)) 
         {
-          //block_write (fs_device, sector, disk_inode);
           cache_write (sector, disk_inode);
           if (sectors > 0) 
             {
@@ -123,7 +122,6 @@ inode_create (block_sector_t sector, off_t length)
               size_t i;
               
               for (i = 0; i < sectors; i++) 
-                //block_write (fs_device, disk_inode->start + i, zeros);
                 cache_write (disk_inode->start + i, zeros);
             }
           success = true; 
@@ -165,7 +163,6 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
-  //block_read (fs_device, inode->sector, &inode->data);
   cache_read (inode->sector, &inode->data);
   return inode;
 }
@@ -231,8 +228,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 {
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
-  //printf ("INODE_READ_AT beg, size: %u, offset: %u, inode_length: %u\n", size, offset, inode_length(inode));
-
 
   while (size > 0) 
     {
@@ -250,21 +245,13 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       if (chunk_size <= 0)
         break;
 
-      if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
-        {
-          /* Read full sector directly into caller's buffer. */
-          cache_read (sector_idx, buffer + bytes_read);
-        }
-      else 
-        {
-          cache_read_partial (sector_idx, buffer + bytes_read, 
+      cache_read_partial (sector_idx, buffer + bytes_read, 
                               sector_ofs, chunk_size);
-        }
+
       /* Advance. */
       size -= chunk_size;
       offset += chunk_size;
       bytes_read += chunk_size;
-      //printf (" read sector： %u\n", sector_idx);
     }
   /* Read-ahead if there is sector left in the file. */
   int sector_ofs = offset % BLOCK_SECTOR_SIZE;
@@ -309,25 +296,16 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       if (chunk_size <= 0)
         break;
 
-      if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
-        {
-          /* Write full sector directly to disk. */
-          cache_write (sector_idx, buffer + bytes_written);
-        }
-      else 
-        {
-          /* If the sector contains data before or after the chunk
-             we're writing, then we need to read in the sector
-             first.  Otherwise we start with a sector of all zeros. */
-          bool set_to_zero = !(sector_ofs > 0 || chunk_size < sector_left);
-          cache_write_partial (sector_idx, buffer + bytes_written, sector_ofs, chunk_size, set_to_zero);
-        }
+      /* If the sector contains data before or after the chunk
+         we're writing, then we need to read in the sector
+         first.  Otherwise we start with a sector of all zeros. */
+      bool set_to_zero = !(sector_ofs > 0 || chunk_size < sector_left);
+      cache_write_partial (sector_idx, buffer + bytes_written, sector_ofs, chunk_size, set_to_zero);
 
       /* Advance. */
       size -= chunk_size;
       offset += chunk_size;
       bytes_written += chunk_size;
-      //printf (" write sector： %u\n", sector_idx);
     }
 
   return bytes_written;

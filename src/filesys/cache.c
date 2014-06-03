@@ -21,8 +21,8 @@ struct cache_entry
   block_sector_t new_sector;           /* Sector no of block after eviction. */
   bool accessed;                       /* Whether has been accessed. */
   bool dirty;                          /* Whether has been written. */
-  bool evicting;                       /* Whether being evicted. */
-  bool flushing;                       /* Whether being flushed. */
+  bool evicting;                       /* Entry being evicted. */
+  bool flushing;                       /* Entry being flushed. */
   size_t reader;                       /* Number of active readers. */
   size_t writer;                       /* Number of active writers. */
   size_t waiting_reader;               /* Number of waiting readers. */
@@ -104,7 +104,6 @@ cache_init (void)
 void 
 cache_flush (void)
 {
-  printf ("@@@ Start Flushing.\n");
   size_t i;
   struct cache_entry *entry;
   for (i = 0; i<BUFFER_CACHE_SIZE; i++)
@@ -132,7 +131,6 @@ cache_flush (void)
     }
     lock_release (&entry->lock);
   }
-  printf ("@@@ Finish Flushing.\n");
 }
 
 /* Background thread that periodically flush the cache. */
@@ -145,22 +143,8 @@ periodic_flush_daemon (void *aux UNUSED)
     cache_flush ();
   }
 }
-// DEBUG
-static void
-print_ra_queue (void)
-{
-  struct read_ahead_task *task;
-  struct list_elem *e;
-  for (e = list_begin (&read_ahead_list); e != list_end (&read_ahead_list);
-       e = list_next (e)) 
-  {
-    task = list_entry (e, struct read_ahead_task, elem);
-    printf ("%u, ", task->sector);
-  }
-  if (!list_empty (&read_ahead_list))
-    printf ("\n");
-}
 
+/* Helper function to check if a sector is already in read-ahead task queue. */
 static bool
 sector_in_ra_queue (block_sector_t sector)
 {
@@ -182,7 +166,6 @@ sector_in_ra_queue (block_sector_t sector)
 void
 cache_read_ahead (block_sector_t sector)
 {
-  //printf ("-- Read Ahead --\n");
   lock_acquire (&read_ahead_lock);
   /* Check whether this sector is already in read-ahead queue. 
    * If it is, return directly. otherwise, push it to end of queue. */
@@ -191,8 +174,6 @@ cache_read_ahead (block_sector_t sector)
     lock_release (&read_ahead_lock);
     return;
   }
-  //print_ra_queue ();
-  //printf ("- read ahead sector: %u - \n", sector);
   struct read_ahead_task *task;
   task = (struct read_ahead_task *) malloc (sizeof (struct read_ahead_task));
   task->sector = sector;
@@ -205,7 +186,6 @@ cache_read_ahead (block_sector_t sector)
 static void
 read_ahead_cancel (block_sector_t sector)
 {
-  //printf ("read_ahead_cancel *entrance*\n");
   lock_acquire (&read_ahead_lock);
   struct read_ahead_task *task;
   struct list_elem *e;
@@ -217,7 +197,6 @@ read_ahead_cancel (block_sector_t sector)
      * removing it from read_ahead queue and free its memory. */
     if (task->sector == sector) 
     {
-      //printf ("-- read ahead cancel sector: %u\n", sector);
       list_remove (e);
       free (task);
       lock_release (&read_ahead_lock);
@@ -225,7 +204,6 @@ read_ahead_cancel (block_sector_t sector)
     }
   }
   lock_release (&read_ahead_lock);
-  //printf ("read_ahead_cancel *nothing to cancel*\n");
 }
 
 
@@ -252,39 +230,7 @@ read_ahead_daemon (void *aux UNUSED)
     lock_release (&read_ahead_lock);
 
     void *buffer = malloc (BLOCK_SECTOR_SIZE);
-    //printf ("### Start to read ahead sector: %u \n", sector);
     cache_read (sector, buffer);
-/*
- //////////////////////////////////////////////////
-  lock_acquire (&buffer_cache_lock);
-  int entry_id = sector_in_cache (sector, false);
-  if (entry_id == -1)
-  {
-    printf ("### Before evict_entry_id ...\n");
-    entry_id = evict_entry_id (sector);
-    printf ("### After evict_entry_id ...\n");
-    struct cache_entry *entry = &buffer_cache[entry_id];
-    printf ("### Before block_read ...\n");
-
-    block_read (fs_device, sector, entry->content);
-    printf ("### After block_read ...\n");
-
-    lock_acquire (&entry->lock);
-    entry->sector = sector;
-    entry->new_sector = UINT32_MAX;
-    entry->dirty = false;
-    entry->accessed = false;
-    entry->evicting = false;
-    cond_broadcast (&entry->ready, &entry->lock);
-    entry->waiting_reader++;
-    lock_release (&entry->lock);
-  }
-  printf ("### Before cache_read_hit ...\n");
-  cache_read_hit (entry_id, buffer, 0, BLOCK_SECTOR_SIZE);
- //////////////////////////////////////////////////
-*/
-
-    //printf ("### Finish to read ahead sector: %u \n", sector);
     free (buffer);
   }
 }
@@ -300,7 +246,7 @@ sector_in_cache (block_sector_t sector, bool to_write)
   {
     entry = &buffer_cache[i];
     lock_acquire (&entry->lock);
-    if (!entry->evicting && entry->sector == sector)
+    if (entry->sector == sector && !entry->evicting)
     {
       /* Set waiting flag to prevent the entry from bing evicted. */
       if (to_write)
@@ -309,7 +255,6 @@ sector_in_cache (block_sector_t sector, bool to_write)
         entry->waiting_reader++;
       /* Release buffer_cache_lock before cond_wait. */
       lock_release (&buffer_cache_lock);
-      /* Wait until flushing finishes. */
       while (entry->flushing)
       {
         cond_wait (&entry->ready, &entry->lock);
@@ -317,7 +262,7 @@ sector_in_cache (block_sector_t sector, bool to_write)
       lock_release (&entry->lock);
       return i;
     }
-    else if (entry->evicting && entry->new_sector == entry->sector)
+    else if (entry->new_sector == entry->sector && entry->evicting)
     {
       /* Set waiting flag to prevent the entry from bing evicted. */
       if (to_write)
@@ -351,7 +296,7 @@ evict_entry_id (block_sector_t new_sector)
     cur_hand = hand;
     entry = &buffer_cache[cur_hand];
     lock_acquire (&entry->lock);
-    if (entry->waiting_reader + entry->waiting_reader + 
+    if (entry->waiting_reader + entry->waiting_writer + 
           entry->reader + entry->writer > 0
           || entry->flushing || entry->evicting)
     {
@@ -375,11 +320,19 @@ evict_entry_id (block_sector_t new_sector)
       clock_hand_increase_one ();
       if (entry->dirty)
       {
+        /* Set flushing flag if the sector needs to be writen back. 
+         * a sector cannot be read if it being flushed. */
+        entry->flushing = true;
         lock_release (&entry->lock);
         lock_release (&buffer_cache_lock);
         /* IO without holding any locks. */
         block_write (fs_device, entry->sector, entry->content);
-      } 
+
+        lock_acquire (&entry->lock);
+        entry->dirty = false;
+        entry->flushing = false;
+        lock_release (&entry->lock);
+      }
       else
       {
         lock_release (&entry->lock);
@@ -387,7 +340,6 @@ evict_entry_id (block_sector_t new_sector)
       }
       return cur_hand;
     }
-    ASSERT (0);
   }
 }
 
@@ -397,7 +349,6 @@ cache_read_hit (size_t entry_id, void *buffer, off_t start, off_t len)
 {
   struct cache_entry *entry = &buffer_cache[entry_id];
   lock_acquire (&entry->lock);
-  ASSERT (!entry->evicting);
   while (entry->waiting_writer + entry->writer > 0 || entry->flushing)
   {
     cond_wait (&entry->ready, &entry->lock);
@@ -418,6 +369,30 @@ cache_read_hit (size_t entry_id, void *buffer, off_t start, off_t len)
   lock_release (&entry->lock);
 }
 
+/* Helper function. Make sure the sector is not being flushed 
+ * from another entry in another thread. */
+static void
+wait_until_sector_flushed (block_sector_t sector)
+{
+  size_t i;
+  struct cache_entry *entry;
+  for (i = 0; i<BUFFER_CACHE_SIZE; i++)
+  {
+    entry = &buffer_cache[i];
+    lock_acquire (&entry->lock);
+    if (entry->sector == sector && entry->evicting)
+    {
+      while (entry->flushing)
+      {
+        cond_wait (&entry->ready, &entry->lock);
+      }
+      lock_release (&entry->lock);
+      return;
+    }
+    lock_release (&entry->lock);
+  }
+}
+
 /* Cache read miss routine: evict, block_read, set entry metadata, 
  * call cache_read_hit. */
 static void
@@ -426,6 +401,8 @@ cache_read_miss (block_sector_t sector, void *buffer, off_t start, off_t len)
   size_t entry_id = evict_entry_id (sector);
   struct cache_entry *entry = &buffer_cache[entry_id];
 
+  /* Before IO, make sure the sector has been flushed to disk. */
+  wait_until_sector_flushed (sector);
   /* IO without holding any locks. */
   block_read (fs_device, sector, entry->content);
 
@@ -433,7 +410,6 @@ cache_read_miss (block_sector_t sector, void *buffer, off_t start, off_t len)
   entry->sector = sector;
   entry->new_sector = UINT32_MAX;
   entry->accessed = false;
-  entry->dirty = false;
   entry->evicting = false;
   cond_broadcast (&entry->ready, &entry->lock);
   entry->waiting_reader++;
@@ -457,13 +433,9 @@ cache_read_partial (block_sector_t sector, void *buffer,
   lock_acquire (&buffer_cache_lock);
   int entry_id = sector_in_cache (sector, false);
   if (entry_id == -1)
-  {
     cache_read_miss (sector, buffer, start, len);
-  }
   else
-  {    
     cache_read_hit (entry_id, buffer, start, len);
-  }
 }
 
 /* Read entire disk sector. */
@@ -479,10 +451,9 @@ cache_read (block_sector_t sector, void *buffer)
 /* Cache write hit routine: acquire write lock, memcpy, release write lock. */
 static void
 cache_write_hit (size_t entry_id, const void *buffer, off_t start, off_t len)
-{
+{  
   struct cache_entry *entry = &buffer_cache[entry_id];
   lock_acquire (&entry->lock);
-  ASSERT (!entry->evicting);
   while (entry->reader + entry->writer > 0 || entry->flushing)
   {
     cond_wait (&entry->ready, &entry->lock);
@@ -515,7 +486,9 @@ cache_write_miss (block_sector_t sector, const void *buffer, off_t start, off_t 
     memset (entry->content, 0, BLOCK_SECTOR_SIZE);
   }
   else
-  {
+  {      
+    /* Before IO, make sure the sector has been flushed to disk. */
+    wait_until_sector_flushed (sector);
     /* IO without holding any locks. */
     block_read (fs_device, sector, entry->content);
   }
