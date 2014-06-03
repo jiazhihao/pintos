@@ -229,8 +229,8 @@ read_ahead_daemon (void *aux UNUSED)
     lock_release (&read_ahead_lock);
 
     void *buffer = malloc (BLOCK_SECTOR_SIZE);
-    //cache_read (sector, buffer);
-
+    cache_read (sector, buffer);
+/*
 //////////////////////////////////////////////////
     lock_acquire (&buffer_cache_lock);
     int entry_id = sector_in_cache (sector, false);
@@ -263,7 +263,7 @@ read_ahead_daemon (void *aux UNUSED)
     cache_read_hit (entry_id, buffer, 0, BLOCK_SECTOR_SIZE);
     printf ("### After cache_read_hit ...\n");
  //////////////////////////////////////////////////
-
+*/
 
     free (buffer);
   }
@@ -322,7 +322,7 @@ sector_in_cache (block_sector_t sector, bool to_write)
       lock_release (&entry->lock);
       return -1;
       */
-      printf ("@sector: %u is being evicted.\n", sector);
+      //printf ("@sector: %u is being evicted. to_write: %d\n", sector, to_write);
     }
     lock_release (&entry->lock);
   }
@@ -431,10 +431,10 @@ wait_until_sector_flushed (block_sector_t sector)
     lock_acquire (&entry->lock);
     if (entry->sector == sector)
     {
-      if (!entry->evicting)
-      {
-        printf ("~~ wait, flushing: %d, sector: %u, next_sector: %u\n", entry->flushing, entry->sector, entry->new_sector);
-      }
+      //if (!entry->evicting)
+      //{
+       // printf ("~~ wait, flushing: %d, sector: %u, next_sector: %u\n", entry->flushing, entry->sector, entry->new_sector);
+      //}
       ASSERT (entry->evicting);
 
       while (entry->flushing)
@@ -458,9 +458,9 @@ cache_read_miss (block_sector_t sector, void *buffer, off_t start, off_t len)
   struct cache_entry *entry = &buffer_cache[entry_id];
 
   /* Before IO, make sure the sector has been flushed to disk. */
-  printf ("before wait sector: %u\n", sector);
+  //printf ("before_r wait sector: %u\n", sector);
   bool flag = wait_until_sector_flushed (sector);
-  printf ("after wait sector: %u, %d\n", sector, flag);
+  //printf ("after_r wait sector: %u, %d\n", sector, flag);
   /* IO without holding any locks. */
   block_read (fs_device, sector, entry->content);
 
@@ -540,13 +540,16 @@ cache_write_miss (block_sector_t sector, const void *buffer, off_t start, off_t 
 
   if (set_to_zero)
   {
+    wait_until_sector_flushed (sector);
     /* Set all content bytes to 0. */
     memset (entry->content, 0, BLOCK_SECTOR_SIZE);
   }
   else
   {      
     /* Before IO, make sure the sector has been flushed to disk. */
+    //printf ("before_w wait sector: %u\n", sector);
     wait_until_sector_flushed (sector);
+    //printf ("after_w wait sector: %u\n", sector);
     /* IO without holding any locks. */
     block_read (fs_device, sector, entry->content);
   }
