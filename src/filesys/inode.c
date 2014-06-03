@@ -274,6 +274,7 @@ inode_extend_single (struct inode_disk *inode)
 static bool
 inode_extend_file (struct inode_disk *inode, off_t length)
 {
+  printf("inode_extend_file(BEGIN)\n");
   off_t cur_left = ROUND_UP (inode->length, BLOCK_SECTOR_SIZE)
                    - inode->length;
   off_t extend_len = length - inode->length;
@@ -281,6 +282,7 @@ inode_extend_file (struct inode_disk *inode, off_t length)
   if (cur_left >= extend_len)
   {
     inode->length = length;
+    printf("inode_extend_file(END)\n");
     return true;
   }
 
@@ -288,10 +290,14 @@ inode_extend_file (struct inode_disk *inode, off_t length)
   while (inode->length < length)
   {
     if (!inode_extend_single (inode))
+    {
+      printf("inode_extend_file(END)\n");
       return false;
+    }
     inode->length += BLOCK_SECTOR_SIZE;
   }
   inode->length = length;
+  printf("inode_extend_file(END)\n");
   return true;
 }
 
