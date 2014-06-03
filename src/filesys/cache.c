@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <debug.h>
 
-#define BUFFER_CACHE_SIZE 64
+#define BUFFER_CACHE_SIZE 64           /* Number of cache entries. */
 #define CACHE_FLUSH_PERIOD 10          /* Flush period in second. */
 #define CACHE_FLUSH_PERIOD_TICKS (TIMER_FREQ * CACHE_FLUSH_PERIOD)
 
@@ -101,6 +101,7 @@ cache_init (void)
   thread_create ("read_ahead", PRI_DEFAULT, read_ahead_daemon, NULL);
 }
 
+/* Flush all dirty entry to disk. */
 void 
 cache_flush (void)
 {
@@ -182,7 +183,8 @@ cache_read_ahead (block_sector_t sector)
   lock_release (&read_ahead_lock);
 }
 
-/* Prevent the daemon from "prefecthing" obsolete sectors. */
+/* Cancel read_ahead task with the same sector number by
+ * removing it from read_ahead queue and free its memory. */
 static void
 read_ahead_cancel (block_sector_t sector)
 {
@@ -193,8 +195,6 @@ read_ahead_cancel (block_sector_t sector)
        e = list_next (e)) 
   {
     task = list_entry (e, struct read_ahead_task, elem);
-    /* Cancel read_ahead task with the same sector number by
-     * removing it from read_ahead queue and free its memory. */
     if (task->sector == sector) 
     {
       list_remove (e);
@@ -205,11 +205,6 @@ read_ahead_cancel (block_sector_t sector)
   }
   lock_release (&read_ahead_lock);
 }
-
-
-static int sector_in_cache (block_sector_t sector, bool to_write);
-static void cache_read_hit (size_t entry_id, void *buffer, off_t start, off_t len);
-static size_t evict_entry_id (block_sector_t new_sector);
 
 /* Background thread that is in charge of prefetching. */
 static void 
@@ -262,7 +257,7 @@ sector_in_cache (block_sector_t sector, bool to_write)
       lock_release (&entry->lock);
       return i;
     }
-    else if (entry->new_sector == entry->sector && entry->evicting)
+    else if (entry->new_sector == sector && entry->evicting)
     {
       /* Set waiting flag to prevent the entry from bing evicted. */
       if (to_write)
@@ -317,7 +312,6 @@ evict_entry_id (block_sector_t new_sector)
        * going to be ready when eviction finishes. */
       entry->new_sector = new_sector;
       entry->evicting = true;
-      clock_hand_increase_one ();
       if (entry->dirty)
       {
         /* Set flushing flag if the sector needs to be writen back. 
@@ -325,19 +319,22 @@ evict_entry_id (block_sector_t new_sector)
         entry->flushing = true;
         lock_release (&entry->lock);
         lock_release (&buffer_cache_lock);
+
         /* IO without holding any locks. */
         block_write (fs_device, entry->sector, entry->content);
 
         lock_acquire (&entry->lock);
         entry->dirty = false;
         entry->flushing = false;
+        cond_broadcast (&entry->ready, &entry->lock);
         lock_release (&entry->lock);
       }
       else
       {
         lock_release (&entry->lock);
         lock_release (&buffer_cache_lock);
-      }
+      }      
+      clock_hand_increase_one ();
       return cur_hand;
     }
   }
@@ -380,7 +377,7 @@ wait_until_sector_flushed (block_sector_t sector)
   {
     entry = &buffer_cache[i];
     lock_acquire (&entry->lock);
-    if (entry->sector == sector && entry->evicting)
+    if (entry->sector == sector)
     {
       while (entry->flushing)
       {
@@ -425,7 +422,6 @@ cache_read_partial (block_sector_t sector, void *buffer,
 {
   /* Cancel read_ahead task with the same sector number. */
   read_ahead_cancel (sector);
-
   /* Lock released in sector_in_cache before cond_wait (entry found)
    * or in evict_entry_id before IO (entry not found). 
    * Since no thread acquires buffer_cache_lock while holding
@@ -445,13 +441,10 @@ cache_read (block_sector_t sector, void *buffer)
   cache_read_partial (sector, buffer, 0, BLOCK_SECTOR_SIZE);
 }
 
-
-
-
 /* Cache write hit routine: acquire write lock, memcpy, release write lock. */
 static void
 cache_write_hit (size_t entry_id, const void *buffer, off_t start, off_t len)
-{  
+{
   struct cache_entry *entry = &buffer_cache[entry_id];
   lock_acquire (&entry->lock);
   while (entry->reader + entry->writer > 0 || entry->flushing)
@@ -480,15 +473,15 @@ cache_write_miss (block_sector_t sector, const void *buffer, off_t start, off_t 
   size_t entry_id = evict_entry_id (sector);
   struct cache_entry *entry = &buffer_cache[entry_id];
 
+  /* Before IO, make sure the sector has been flushed to disk. */
+  wait_until_sector_flushed (sector);
   if (set_to_zero)
   {
     /* Set all content bytes to 0. */
     memset (entry->content, 0, BLOCK_SECTOR_SIZE);
   }
   else
-  {      
-    /* Before IO, make sure the sector has been flushed to disk. */
-    wait_until_sector_flushed (sector);
+  {
     /* IO without holding any locks. */
     block_read (fs_device, sector, entry->content);
   }
