@@ -8,10 +8,10 @@
 #include "filesys/free-map.h"
 #include "filesys/cache.h"
 #include "threads/malloc.h"
+#include "threads/synch.h"
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
-
 #define DIRECT_IDX_CNT (128 - 6)
 #define SECTOR_IDX_CNT (BLOCK_SECTOR_SIZE / 4)
 #define DIRECT_BLOCK_SIZE (DIRECT_IDX_CNT * BLOCK_SECTOR_SIZE)
@@ -80,7 +80,7 @@ static block_sector_t
 indirect_get_sector (block_sector_t sector, off_t pos)
 {
   struct indirect_block *block;
-  block = malloc (sizeof indirect_block);
+  block = malloc (sizeof *block);
   if (block == NULL)
     return -1;
   cache_read (sector, block);
@@ -141,10 +141,10 @@ allocate_sector (bool set_zero)
 static block_sector_t
 allocate_indirect_block (block_sector_t first_sector)
 {
-  block_sector sector;
+  block_sector_t sector;
   if (!free_map_allocate (1, &sector))
     return -1;
-  struct indirect_block blk = malloc (sizeof *blk);
+  struct indirect_block *blk = malloc (sizeof *blk);
   if (blk == NULL)
     return -1;
   blk->idx[0] = first_sector;
@@ -154,91 +154,90 @@ allocate_indirect_block (block_sector_t first_sector)
 }
 
 static bool
-inode_extend_single (struct inode *inode)
+inode_extend_single (struct inode_disk *inode)
 {
-  ASSERT (lock_held_by_current_thread (&inode->inode_lock));
   block_sector_t data_sector = allocate_sector(true);
-  if (data_sector == -1)
+  if ((int)data_sector == -1)
     return false;
 
   /* Case 1: Add a sector into direct block. */
-  if (inode->data.length + BLOCK_SECTOR_SIZE <= DIRECT_BLOCK_SIZE)
+  if (inode->length + BLOCK_SECTOR_SIZE <= DIRECT_BLOCK_SIZE)
   {
-    int idx = ROUND_UP(inode->data.length, BLOCK_SECTOR_SIZE)
+    int idx = ROUND_UP(inode->length, BLOCK_SECTOR_SIZE)
               / BLOCK_SECTOR_SIZE;
-    inode->data.direct_idx[idx] = data_sector;
+    inode->direct_idx[idx] = data_sector;
     return true;
   }
   /* Case 2: Add a sector into single indirect block. */
-  else if (inode->data.length + BLOCK_SECTOR_SIZE
+  else if (inode->length + BLOCK_SECTOR_SIZE
            <= DIRECT_BLOCK_SIZE + SINGLE_BLOCK_SIZE)
   {
     /* Case 2.1: Need to allocate new indirect block*/
-    if (inode->data.length <= DIRECT_BLOCK_SIZE)
+    if (inode->length <= DIRECT_BLOCK_SIZE)
     {
       block_sector_t sector
         = allocate_indirect_block (data_sector);
-      if (sector = -1)
+      if ((int)sector == -1)
         return false;
-      inode->data.single_idx = sector;
+      inode->single_idx = sector;
       return true;
     }
     /* Case 2.2: No need to allocate new indirect block*/
     else
     {
-      int idx = ROUND_UP(inode->data.length - DIRECT_BLOCK_SIZE,
+      int idx = ROUND_UP(inode->length - DIRECT_BLOCK_SIZE,
                          BLOCK_SECTOR_SIZE);
       struct indirect_block *blk = malloc (sizeof *blk);
       if (blk == NULL)
         return false;
-      cache_read (inode->data.single_idx, blk);
+      cache_read (inode->single_idx, blk);
       blk->idx[idx] = data_sector;
-      cache_write (inode->data.single_idx, blk);
+      cache_write (inode->single_idx, blk);
       free (blk);
       return true;
     }
   }
   /* Case 3: Add a sector into double indirect block. */
-  else if (inode->data.length + BLOCK_SECTOR_SIZE
+  else if (inode->length + BLOCK_SECTOR_SIZE
            <= DIRECT_BLOCK_SIZE + SINGLE_BLOCK_SIZE + DOUBLE_BLOCK_SIZE)
   {
     /* Case 3.1: Need to allocate double/single indirect block. */
-    if (inode->data.length <= DIRECT_BLOCK_SIZE + SINGLE_BLOCK_SIZE)
+    if (inode->length <= DIRECT_BLOCK_SIZE + SINGLE_BLOCK_SIZE)
     {
       block_sector_t sector1
         = allocate_indirect_block (data_sector);
-      if (sector1 == -1)
+      if ((int)sector1 == -1)
         return false;
       block_sector_t sector2
-        = allocate_indrect_block (sector1);
-      if (sector2 == -1)
+        = allocate_indirect_block (sector1);
+      if ((int)sector2 == -1)
         return false;
-      inode->data.double_idx = sector2;
+      inode->double_idx = sector2;
       return true;
     }
     /* Case 3.2: No need to allocate double indirect block. */
     else
     {
-      off_t ofs = inode->data.length - DIRECT_BLOCK_SIZE - SINGLE_BLOCK_SIZE;
+      off_t ofs = inode->length - DIRECT_BLOCK_SIZE - SINGLE_BLOCK_SIZE;
       int idx1 = ROUND_UP(ofs, SINGLE_BLOCK_SIZE) / SINGLE_BLOCK_SIZE;
       int idx2 = ROUND_UP(ofs + BLOCK_SECTOR_SIZE, SINGLE_BLOCK_SIZE)
                  / SINGLE_BLOCK_SIZE;
       struct indirect_block *double_blk = malloc (sizeof *double_blk);
       if (double_blk == NULL)
         return false;
-      cache_read (inode->data.double_idx, double_blk);
+      cache_read (inode->double_idx, double_blk);
       /* Case 3.2.1: Need to allocate a new indirect block*/
       if (idx1 != idx2)
       {
         block_sector_t sector
           = allocate_indirect_block (data_sector);
-        if (sector == -1)
+        if ((int)sector == -1)
         {
           free (double_blk);
           return false;
         }
         double_blk->idx[idx2] = sector;
-        cache_write (inode->data.double_idx, double_blk);
+        cache_write (inode->double_idx, double_blk);
         free (double_blk);
         return true;
       }
@@ -269,26 +268,25 @@ inode_extend_single (struct inode *inode)
 }
 
 static bool
-inode_extend_file (struct inode *inode, off_t length)
+inode_extend_file (struct inode_disk *inode, off_t length)
 {
-  ASSERT (lock_held_by_current_thread (&inode->inode_lock));
-  off_t cur_left = ROUND_UP (inode->data.length, BLOCK_SECTOR_SIZE)
-                   - inode->data.length;
-  off_t extend_len = length - inode->data.length;
+  off_t cur_left = ROUND_UP (inode->length, BLOCK_SECTOR_SIZE)
+                   - inode->length;
+  off_t extend_len = length - inode->length;
   /* In case no need to allocate new sectors. */
   if (cur_left >= extend_len)
   {
-    inode->data.length = length;
+    inode->length = length;
     return true;
   }
 
-  inode->data.length = ROUND_UP (inode->data.length, BLOCK_SECTOR_SIZE);
-  while (inode->data.length < length)
+  inode->length = ROUND_UP (inode->length, BLOCK_SECTOR_SIZE);
+  while (inode->length < length)
   {
     if (!inode_extend_single (inode))
       return false;
   }
-  inode->data.length = length;
+  inode->length = length;
   return true;
 }
 
@@ -415,7 +413,7 @@ free_inode (struct inode *inode)
 
   /*Free sector for indirect block if any*/
   if (inode->data.length > DIRECT_BLOCK_SIZE)
-    free_map_release (inode->data.indirect_idx, 1);
+    free_map_release (inode->data.single_idx, 1);
 
   /*Free sectors for double indirect blocks if any*/
   if (inode->data.length > DIRECT_BLOCK_SIZE + SINGLE_BLOCK_SIZE)
@@ -424,7 +422,7 @@ free_inode (struct inode *inode)
     cache_read (inode->data.double_idx, &block);
     int idx = 0;
     for (cur = DIRECT_BLOCK_SIZE + SINGLE_BLOCK_SIZE;
-         cur < length; cur = cur + SINGLE_BLOCK)
+         cur < length; cur = cur + SINGLE_BLOCK_SIZE)
       free_map_release (block.idx[idx++], 1);
     free_map_release (inode->data.double_idx, 1);
   }
@@ -552,7 +550,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
        * end of writing.*/
       lock_acquire (&inode->inode_lock);
       if (offset + chunk_size > inode->data.length)
-        inode_extend_file (inode, offset + chunk_size);
+        inode_extend_file (&inode->data, offset + chunk_size);
       lock_release (&inode->inode_lock);
 
       /* If the sector contains data before or after the chunk
