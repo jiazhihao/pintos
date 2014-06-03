@@ -6,6 +6,7 @@
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
 #include "filesys/directory.h"
+#include "filesys/cache.h"
 #include "threads/synch.h"
 #include "userprog/process.h"
 
@@ -40,6 +41,7 @@ filesys_init (bool format)
 void
 filesys_done (void) 
 {
+  cache_flush ();
   free_map_close ();
 }
 
