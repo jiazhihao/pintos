@@ -7,6 +7,7 @@
 #include "filesys/inode.h"
 #include "filesys/directory.h"
 #include "threads/synch.h"
+#include "userprog/process.h"
 
 /* Partition that contains the file system. */
 struct block *fs_device;
@@ -47,16 +48,25 @@ filesys_done (void)
    Fails if a file named NAME already exists,
    or if internal memory allocation fails. */
 bool
-filesys_create (const char *name, off_t initial_size) 
+filesys_create (const char *name, off_t initial_size)
 {
   block_sector_t inode_sector = 0;
-  struct dir *dir = dir_open_root ();
-  bool success = (dir != NULL
-                  && free_map_allocate (1, &inode_sector)
-                  && inode_create (inode_sector, initial_size)
-                  && dir_add (dir, name, inode_sector));
-  if (!success && inode_sector != 0) 
-    free_map_release (inode_sector, 1);
+  struct dir *dir;
+  char *file_name;
+  if (!dir_parser (name, &dir, &file_name))
+  {
+    return false;
+  }
+  bool success = false;
+  if (check_file_name (file_name))
+  {
+    success = (dir != NULL
+                    && free_map_allocate (1, &inode_sector)
+                    && inode_create (inode_sector, initial_size, false)
+                    && dir_add (dir, file_name, inode_sector));
+    if (!success && inode_sector != 0)
+      free_map_release (inode_sector, 1);
+  }
   dir_close (dir);
 
   return success;
@@ -70,11 +80,20 @@ filesys_create (const char *name, off_t initial_size)
 struct file *
 filesys_open (const char *name)
 {
-  struct dir *dir = dir_open_root ();
+  struct dir *dir;
+  char *file_name;
+  if (!dir_parser (name, &dir, &file_name))
+  {
+    return NULL;
+  }
+  if (!check_file_name (file_name))
+  {
+    return NULL;
+  }
   struct inode *inode = NULL;
 
   if (dir != NULL)
-    dir_lookup (dir, name, &inode);
+    dir_lookup (dir, file_name, &inode);
   dir_close (dir);
 
   return file_open (inode);
@@ -87,8 +106,17 @@ filesys_open (const char *name)
 bool
 filesys_remove (const char *name) 
 {
-  struct dir *dir = dir_open_root ();
-  bool success = dir != NULL && dir_remove (dir, name);
+  struct dir *dir;
+  char *file_name;
+  if (!dir_parser (name, &dir, &file_name))
+  {
+    return false;
+  }
+  if (!check_file_name (file_name))
+  {
+    return false;
+  }
+  bool success = dir != NULL && dir_remove (dir, file_name);
   dir_close (dir); 
 
   return success;
@@ -104,4 +132,27 @@ do_format (void)
     PANIC ("root directory creation failed");
   free_map_close ();
   printf ("done.\n");
+}
+
+/* check whether the file_name is legal
+ * currently only check file_name do not has blank */
+bool check_file_name (char *file_name)
+{
+  if (file_name == NULL)
+  {
+    return false;
+  }
+  if (strnlen (file_name, FILE_NAME_LEN))
+  {
+    return false;
+  }
+  while (*file_name != 0)
+  {
+    if (*file_name == ' ' || *file_name == '/')
+    {
+      return false;
+    }
+    file_name++;
+  }
+  return true;
 }

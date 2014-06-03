@@ -6,6 +6,7 @@
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
+#include "threads/synch.h"
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
@@ -17,7 +18,8 @@ struct inode_disk
     block_sector_t start;               /* First data sector. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    uint32_t unused[125];               /* Not used. */
+    char isdir;                         /* 1 if this inode is dir */
+    char unused[499];                   /* Not used. */
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -36,6 +38,7 @@ struct inode
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
+    struct lock dir_lock;               /* Used to synchronize dir operation */
     struct inode_disk data;             /* Inode content. */
   };
 
@@ -70,7 +73,7 @@ inode_init (void)
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (block_sector_t sector, off_t length)
+inode_create (block_sector_t sector, off_t length, bool isdir)
 {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
@@ -137,6 +140,7 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
+  lock_init (&inode->dir_lock);
   block_read (fs_device, inode->sector, &inode->data);
   return inode;
 }
@@ -342,4 +346,24 @@ off_t
 inode_length (const struct inode *inode)
 {
   return inode->data.length;
+}
+
+void lock_dir (struct inode *inode)
+{
+  lock_acquire (&inode->dir_lock);
+}
+
+void unlock_dir (struct inode *inode)
+{
+  lock_release (&inode->dir_lock);
+}
+
+bool inode_isdir (struct inode *inode)
+{
+  return inode->data.isdir != 0;
+}
+
+int inode_open_cnt (struct inode *inode)
+{
+  return inode->open_cnt;
 }

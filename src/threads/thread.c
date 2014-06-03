@@ -15,6 +15,8 @@
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
+#include "filesys/directory.h"
+#include "filesys/inode.h"
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -558,6 +560,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->exec_file = NULL;
   t->exit_value = -1;
   t->is_user = false;
+  
+  if (t != initial_thread && thread_current ()->cur_dir)
+  {
+    t->cur_dir = dir_open (inode_reopen (dir_inode(thread_current ()->cur_dir)));
+  }
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -677,3 +684,9 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+void thread_cur_dir_init ()
+{
+  initial_thread->cur_dir = dir_open_root ();
+  idle_thread->cur_dir = dir_open_root ();
+}

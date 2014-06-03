@@ -126,6 +126,7 @@ main (void)
   locate_block_devices ();
   filesys_init (format_filesys);
 #endif
+  thread_cur_dir_init ();
 
   printf ("Boot complete.\n");
   

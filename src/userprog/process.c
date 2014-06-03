@@ -194,6 +194,10 @@ process_exit (void)
   palloc_free_multiple (cur->file_table, cur->file_table_size *
                         sizeof(void *) / PGSIZE);
 
+  /* Close the current directory */
+  dir_close (cur->cur_dir);
+
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
