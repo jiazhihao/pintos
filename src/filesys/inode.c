@@ -205,7 +205,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 {
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
-  //printf ("offset: %u\n", offset);
   while (size > 0) 
     {
       /* Disk sector to read, starting byte offset within sector. */
@@ -229,7 +228,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       size -= chunk_size;
       offset += chunk_size;
       bytes_read += chunk_size;
-      //printf ("read sector: %u\n", sector_idx);
     }
   /* Read-ahead if there is sector left in the file. */
   int sector_ofs = offset % BLOCK_SECTOR_SIZE;
