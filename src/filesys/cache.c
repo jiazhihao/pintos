@@ -228,8 +228,8 @@ read_ahead_daemon (void *aux UNUSED)
     lock_release (&read_ahead_lock);
 
     void *buffer = malloc (BLOCK_SECTOR_SIZE);
-    cache_read (sector, buffer);
-/*
+    //cache_read (sector, buffer);
+
 //////////////////////////////////////////////////
     lock_acquire (&buffer_cache_lock);
     int entry_id = sector_in_cache (sector, false);
@@ -257,7 +257,7 @@ read_ahead_daemon (void *aux UNUSED)
     printf ("### Before cache_read_hit ...\n");
     cache_read_hit (entry_id, buffer, 0, BLOCK_SECTOR_SIZE);
  //////////////////////////////////////////////////
-*/
+
 
     free (buffer);
   }
@@ -306,7 +306,7 @@ sector_in_cache (block_sector_t sector, bool to_write)
       lock_release (&entry->lock);
       return i;
     }
-    
+    /*
     if (entry->evicting && entry->sector == sector)
     {
       while (entry->flushing)
@@ -316,6 +316,7 @@ sector_in_cache (block_sector_t sector, bool to_write)
       lock_release (&entry->lock);
       return -1;
     }
+    */
     lock_release (&entry->lock);
   }
   /* Miss: buffer_cache_lock will be released in evict_entry_id. */
@@ -442,7 +443,7 @@ cache_read_miss (block_sector_t sector, void *buffer, off_t start, off_t len)
   struct cache_entry *entry = &buffer_cache[entry_id];
 
   /* Before IO, make sure the sector has been flushed to disk. */
-  //wait_until_sector_flushed (sector);
+  wait_until_sector_flushed (sector);
   /* IO without holding any locks. */
   block_read (fs_device, sector, entry->content);
 
@@ -528,7 +529,7 @@ cache_write_miss (block_sector_t sector, const void *buffer, off_t start, off_t 
   else
   {      
     /* Before IO, make sure the sector has been flushed to disk. */
-    //wait_until_sector_flushed (sector);
+    wait_until_sector_flushed (sector);
     /* IO without holding any locks. */
     block_read (fs_device, sector, entry->content);
   }
