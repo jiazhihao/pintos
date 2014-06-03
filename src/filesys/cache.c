@@ -101,6 +101,7 @@ cache_init (void)
   thread_create ("read_ahead", PRI_DEFAULT, read_ahead_daemon, NULL);
 }
 
+/* Flush all dirty entry to disk. */
 void 
 cache_flush (void)
 {
@@ -421,7 +422,6 @@ cache_read_partial (block_sector_t sector, void *buffer,
 {
   /* Cancel read_ahead task with the same sector number. */
   read_ahead_cancel (sector);
-
   /* Lock released in sector_in_cache before cond_wait (entry found)
    * or in evict_entry_id before IO (entry not found). 
    * Since no thread acquires buffer_cache_lock while holding
@@ -440,9 +440,6 @@ cache_read (block_sector_t sector, void *buffer)
 {
   cache_read_partial (sector, buffer, 0, BLOCK_SECTOR_SIZE);
 }
-
-
-
 
 /* Cache write hit routine: acquire write lock, memcpy, release write lock. */
 static void
