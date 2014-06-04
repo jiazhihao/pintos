@@ -267,6 +267,11 @@ inode_extend_file (struct inode_disk *inode, off_t length)
   off_t cur_left = ROUND_UP (inode->length, BLOCK_SECTOR_SIZE)
                    - inode->length;
   off_t extend_len = length - inode->length;
+
+  /* Check if the length exceeds file size limitation*/
+  if (length > DIRECT_BLOCK_SIZE + SINGLE_BLOCK_SIZE + DOUBLE_BLOCK_SIZE)
+    return false;
+
   /* In case no need to allocate new sectors. */
   if (cur_left >= extend_len)
   {
