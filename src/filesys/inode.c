@@ -312,7 +312,7 @@ inode_init (void)
 bool
 inode_create (block_sector_t sector, off_t length, bool isdir)
 {
-  printf("inode_create(BEGIN)\n");
+  //printf("inode_create(BEGIN)\n");
   struct inode_disk *disk_inode = NULL;
   bool success = false;
 
@@ -333,7 +333,7 @@ inode_create (block_sector_t sector, off_t length, bool isdir)
       free (disk_inode);
       success = true;
     }
-  printf("inode_create(END)\n");
+  //printf("inode_create(END)\n");
   return success;
 }
 
@@ -378,6 +378,8 @@ inode_open (block_sector_t sector)
   lock_release (&open_inodes_lock);
   cache_read (inode->sector, &inode->data);
   inode->read_length = inode->data.length;
+  //printf("inode_open: length = %d\n", inode->read_length);
+  //printf("inode->direct_idx[0] = %d\n", inode->data.direct_idx[0]);
   return inode;
 }
 
@@ -443,6 +445,8 @@ inode_close (struct inode *inode)
     return;
 
   lock_acquire (&inode->inode_lock);
+  //printf("read_length = %d, length = %d\n", inode->read_length, inode->data.length);
+  //printf("inode->direct_idx[0] = %d\n", inode->data.direct_idx[0]);
   /* Release resources if this was the last opener. */
   if (--inode->open_cnt == 0)
   {
@@ -455,6 +459,11 @@ inode_close (struct inode *inode)
     if (inode->removed)
     {
       free_inode (inode);
+    }
+    /* otherwise, we write inode->data back to disk */
+    else
+    {
+      cache_write (inode->sector, &inode->data);
     }
     lock_release (&inode->inode_lock);
     free (inode);
@@ -529,16 +538,18 @@ off_t
 inode_write_at (struct inode *inode, const void *buffer_, off_t size,
                 off_t offset) 
 {
+  //printf("inode_write: size = %d, offset = %d\n", size, offset);
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
 
   if (inode->deny_write_cnt)
+  {
+    //printf("Deny write!!!\n");
     return 0;
+  }
 
   while (size > 0) 
     {
-      /* Sector to write, starting byte offset within sector. */
-      block_sector_t sector_idx = byte_to_sector (inode, offset);
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
@@ -556,11 +567,15 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       if (offset + chunk_size > inode->data.length)
         inode_extend_file (&inode->data, offset + chunk_size);
       lock_release (&inode->inode_lock);
-
+      
+      /* Sector to write, starting byte offset within sector. */
+      block_sector_t sector_idx = byte_to_sector (inode, offset);
+      
       /* If the sector contains data before or after the chunk
          we're writing, then we need to read in the sector
          first.  Otherwise we start with a sector of all zeros. */
       bool set_to_zero = !(sector_ofs > 0 || chunk_size < sector_left);
+      //printf("write: sec = %d, ofs = %d, size = %d\n", sector_idx, sector_ofs, chunk_size);
       cache_write_partial (sector_idx, buffer + bytes_written, sector_ofs, chunk_size, set_to_zero);
 
       /* After we have written the extended data, we can let readers see this part of file, simply by
