@@ -212,20 +212,50 @@ cache_read on sector A before the read-ahead task is executed by the daemon.
 >> buffer cache block, how are other processes prevented from evicting
 >> that block?
 
+Each cache entry has four counters marking how many threads are waiting to
+read or write the block and how many threads are actively reading or writing
+the block.
 
-increment waiting_reader/writer and reader/writer.
-eviction checks WR+WW+R+W>0, if it is true, skip the entry.
-every operation on entry is in monitor of entry lock and cond.
+When a thread wants to read or write a block, if firstly goes through the 
+cache entries and if it finds one with matching sector number and is not
+already being evicted, it increments the entry's waiting_reader or waiting_
+writer counter by one. Also, before a thread starts reading or writing data 
+to the cached block, reader or writer counter is incremented by one and 
+waiting_reader or waiting_writer counter is decremented by one. Only after
+reading or writing, is the reader or writer counter decremented back.
+
+On the other side, as described in C2 an entry can be evicted only when all
+of its four counters are exactly zero. Since all entry metadata accesses are
+synchronized by entry lock, it is guranteed that when a thread is reading,
+writing or waiting to read or write a block, the block cannot be evicted.
 
 >> C6: During the eviction of a block from the cache, how are other
 >> processes prevented from attempting to access the block?
 
-setting flushing flag to true.
+During an eviction, if the cache entry's previous block A is dirty, A will be 
+flushed to disk. Afterwards the new block B will be loaded to the cache entry.
+Access to block A is prevented until it has been fully flushed while access to
+block B is prevented until block B is fully loaded. More details are in below.
+
+(1) If a cache entry is being evicted, it will not be evicted by another 
+process as described in C1.
+(2) If thread 1 wants to access block A that is being evicted from an entry by
+thread 2, it will wait until block A is flushed by cond_wait on the entry's
+condition variable and checks wether the entry is still in flushing state after
+wake up, which gurantees that bytes of block A read from disk are updated.
+(3) If thread 1 wants to access block B that is going to or being loaded into
+an entry by thread 2. It will cond_wait until the entry's evicting flag is 
+reset, marking that the block B has been fully loaded.
+
+Note that all cond_wait are waiting without holding locks so that no thread's
+I/O would block other threads from running.
 
 ---- RATIONALE ----
 
 >> C7: Describe a file workload likely to benefit from buffer caching,
 >> and workloads likely to benefit from read-ahead and write-behind.
+
+
 
 			   SURVEY QUESTIONS
 			   ================
