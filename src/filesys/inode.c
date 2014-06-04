@@ -538,7 +538,7 @@ off_t
 inode_write_at (struct inode *inode, const void *buffer_, off_t size,
                 off_t offset) 
 {
-  //printf("inode_write: size = %d, offset = %d\n", size, offset);
+  printf("inode_write: size = %d, offset = %d\n", size, offset);
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
 
@@ -589,7 +589,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       offset += chunk_size;
       bytes_written += chunk_size;
     }
-
+  printf ("inode_write_at finishes.\n");
   return bytes_written;
 }
 
