@@ -193,7 +193,6 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
-  if (ticks % 1000 == 0) printf("ticks = %lld.\n", ticks);
   while (!list_empty(&sleep_list))
   {
     struct list_elem *front = list_front(&sleep_list);
