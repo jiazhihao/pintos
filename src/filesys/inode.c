@@ -87,6 +87,7 @@ indirect_get_sector (block_sector_t sector, int idx)
 static block_sector_t
 byte_to_sector (const struct inode *inode, off_t pos) 
 {
+  ASSERT (inode->data.length >= pos);
   ASSERT (inode != NULL);
   if (pos < DIRECT_BLOCK_SIZE)
   {
@@ -489,7 +490,7 @@ inode_remove (struct inode *inode)
 off_t
 inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset) 
 {
-  if (offset >= inode->read_length)
+  if (offset >= inode_length (inode))
     return 0;
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
