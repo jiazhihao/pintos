@@ -63,18 +63,6 @@ inode_unlock (struct inode *inode)
   lock_release (&inode->inode_lock);
 }
 
-void
-dir_lock (struct inode *inode)
-{
-  lock_acquire (&inode->dir_lock);
-}
-
-void
-dir_unlock (struct inode *inode)
-{
-  lock_release (&inode->dir_lock);
-}
-
 /* Get the block_sector number in an indirect
  * block SECTOR, with index IDX
  * Return -1 if cannot get the sector #, otherwise
@@ -324,6 +312,7 @@ inode_init (void)
 bool
 inode_create (block_sector_t sector, off_t length, bool isdir)
 {
+  printf("inode_create(BEGIN)\n");
   struct inode_disk *disk_inode = NULL;
   bool success = false;
 
@@ -344,6 +333,7 @@ inode_create (block_sector_t sector, off_t length, bool isdir)
       free (disk_inode);
       success = true;
     }
+  printf("inode_create(END)\n");
   return success;
 }
 
@@ -466,8 +456,9 @@ inode_close (struct inode *inode)
         {
           free_inode(inode);
         }
-
+      lock_release (&inode->inode_lock);
       free (inode); 
+      return;
     }
   lock_release (&inode->inode_lock);
 }
@@ -592,8 +583,8 @@ inode_deny_write (struct inode *inode)
 {
   lock_acquire (&inode->inode_lock);
   inode->deny_write_cnt++;
-  lock_release (&inode->inode_lock);
   ASSERT (inode->deny_write_cnt <= inode->open_cnt);
+  lock_release (&inode->inode_lock);
 }
 
 /* Re-enables writes to INODE.

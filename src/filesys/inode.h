@@ -10,8 +10,6 @@ struct inode;
 
 void inode_lock (struct inode *);
 void inode_unlock (struct inode *);
-void dir_lock (struct inode *);
-void dir_unlock (struct inode *);
 void inode_init (void);
 bool inode_create (block_sector_t, off_t, bool);
 struct inode *inode_open (block_sector_t);
