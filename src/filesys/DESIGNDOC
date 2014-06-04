@@ -8,9 +8,9 @@
 
 >> Fill in the names and email addresses of your group members.
 
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
+Ruizhongtai Qi <rqi@stanford.edu>
+Zhihao Jia <zhihao@stanford.edu>
+Tai Guo <taig@stanford.edu>
 
 ---- PRELIMINARIES ----
 
@@ -100,14 +100,111 @@ FirstName LastName <email@domain.example>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+-- cache.c --
+
+- New defines:
+#define BUFFER_CACHE_SIZE 64           /* Number of cache entries. */
+#define CACHE_FLUSH_PERIOD 10          /* Flush period in second. */
+#define CACHE_FLUSH_PERIOD_TICKS (TIMER_FREQ * CACHE_FLUSH_PERIOD)
+
+- New structs:
+/* Cache entry for the file blocks' cache, i.e. buffer_cache. */
+struct cache_entry
+{
+  block_sector_t sector;               /* Sector number of the cached block. */
+  block_sector_t new_sector;           /* Sector no of block after eviction. */
+  bool accessed;                       /* Whether has been accessed. */
+  bool dirty;                          /* Whether has been written. */
+  bool evicting;                       /* Entry being evicted. */
+  bool flushing;                       /* Entry being flushed. */
+  size_t reader;                       /* Number of active readers. */
+  size_t writer;                       /* Number of active writers. */
+  size_t waiting_reader;               /* Number of waiting readers. */
+  size_t waiting_writer;               /* Number of waiting writers. */
+  struct lock lock;                    /* Per entry lock. */
+  struct condition ready;              /* Per entry condition variable. */
+  uint8_t content[BLOCK_SECTOR_SIZE];  /* Block content. */
+};
+
+/* Read-ahead task struct. */
+struct read_ahead_task
+{
+  block_sector_t sector;               /* Sector to read ahead. */
+  struct list_elem elem;               /* Element for read_ahead_list. */
+};
+
+- New static variables:
+/* Buffer cache of file blocks. 
+ * In default, as many as 64 blocks can be cached. */
+static struct cache_entry buffer_cache[BUFFER_CACHE_SIZE];
+
+/* Global buffer cache lock to prevent two threads from evicting 2 entries
+ * for the same sector. Concurrency is kept by releasing the lock before IO. */
+static struct lock buffer_cache_lock;
+
+/* Clock hand for eviction algorithm. */
+static size_t hand;
+static struct lock hand_lock;
+
+/* Read-ahead task queue. */
+static struct list read_ahead_list;
+static struct lock read_ahead_lock;
+static struct condition read_ahead_ready;
+
 ---- ALGORITHMS ----
 
 >> C2: Describe how your cache replacement algorithm chooses a cache
 >> block to evict.
 
+We used basic clock algorithm for cache eviction (in function evict_entry_id).
+A global clock hand variable is maintained. Every time we need to evict a cache
+entry, we firstly look at the entry with index number of current clock hand.
+Each entry access is protected by a monitor (lock and condition variable).
+
+(1) If the entry is being read/written or some thread is waiting to read/write
+it or if the entry is being written back to disk (flushing) or bing evicted,
+skip the entry by increasing clock hand by one and look at the next entry.
+(2) If the entry is recently accessed (accessed flag set), clear the flag and
+skip it to next entry.
+(3) At this stage, the entry is known as unaccessed and not being read/written 
+and not being waited to access and not in flushing/eviction. It is the entry we
+will evict. The entry's evicting flag is set. If the entry's dirty flag is set, 
+we flush it to disk before returning its index.
+
 >> C3: Describe your implementation of write-behind.
 
+Our design achieves lazy-writing/write-behind. Cached sector is written back to
+disk (I/O) only when (1) it is dirty and (2) the cache entry needs to be 
+evicted. Each time before a writing disk I/O happens, the entry's flushing flag
+is set, so that other thread can be aware not to read or write the sector in
+the meantime. During flushing, all locks are released for best concurrency. 
+After the disk I/O finishes, the entry's flushing flag is reset.
+
+A background thread (periodic_flush_daemon) is created at cache initialization.
+The daemon periodically flushes buffer cache by calling timer_sleep and 
+cache_flush. In default, our design flushes the cache every 10 seconds. 
+cache_flush is also called in filesys_done().
+
 >> C4: Describe your implementation of read-ahead.
+
+Our buffer cache design maintains a read-ahead task queue. Each time a read-
+ahead task is issued (by calling cache_read_ahead), a read_ahead_task is 
+created and pushed back to the queue. Also a signal is sent to the daemon 
+thread mentioned below. 
+
+Read ahead task is issued in inode_read_at function when there is more block 
+to read in the file. Since it does not do any I/O (which will be handled 
+asynchronously by the daemon mentioned below), it returns immediately 
+and will not block the current thread.
+
+A background thread (read_ahead_daemon) is created at cache init which
+runs a while loop to check whether there is task in the queue: if there is,
+it pop the task and execute it by making a cache_read call of the to-be-read-
+ahead sector. If the queue is empty, it cond_wait on read_ahead_ready cond.
+
+To prevent wasteful read-ahead (read-ahead task executed after the block is 
+read into cache), read-ahead task of sector A is canceled when a process calls
+cache_read on sector A before the read-ahead task is executed by the daemon.
 
 ---- SYNCHRONIZATION ----
 
@@ -115,13 +212,67 @@ FirstName LastName <email@domain.example>
 >> buffer cache block, how are other processes prevented from evicting
 >> that block?
 
+Each cache entry has four counters marking how many threads are waiting to
+read or write the block and how many threads are actively reading or writing
+the block.
+
+When a thread wants to read or write a block, if firstly goes through the 
+cache entries and if it finds one with matching sector number and is not
+already being evicted, it increments the entry's waiting_reader or waiting_
+writer counter by one. Also, before a thread starts reading or writing data 
+to the cached block, reader or writer counter is incremented by one and 
+waiting_reader or waiting_writer counter is decremented by one. Only after
+reading or writing, is the reader or writer counter decremented back.
+
+On the other side, as described in C2 an entry can be evicted only when all
+of its four counters are exactly zero. Since all entry metadata accesses are
+synchronized by entry lock, it is guranteed that when a thread is reading,
+writing or waiting to read or write a block, the block cannot be evicted.
+
 >> C6: During the eviction of a block from the cache, how are other
 >> processes prevented from attempting to access the block?
+
+During an eviction, if the cache entry's previous block A is dirty, A will be 
+flushed to disk. Afterwards the new block B will be loaded to the cache entry.
+Access to block A is prevented until it has been fully flushed while access to
+block B is prevented until block B is fully loaded. More details are in below.
+
+(1) If a cache entry is being evicted, it will not be evicted by another 
+process as described in C1.
+(2) If thread 1 wants to access block A that is being evicted from an entry by
+thread 2, it will wait until block A is flushed by cond_wait on the entry's
+condition variable and checks wether the entry is still in flushing state after
+wake up, which gurantees that bytes of block A read from disk are updated.
+(3) If thread 1 wants to access block B that is going to or being loaded into
+an entry by thread 2. It will cond_wait until the entry's evicting flag is 
+reset, marking that the block B has been fully loaded.
+
+Note that all cond_wait are waiting without holding locks so that no thread's
+I/O would block other threads from running.
 
 ---- RATIONALE ----
 
 >> C7: Describe a file workload likely to benefit from buffer caching,
 >> and workloads likely to benefit from read-ahead and write-behind.
+
+(1) Buffer caching
+File workload with "locality" will benefit from buffer caching. If the process
+is actively accessing a certain part of the file, i.e. accessing certain
+sectors, these sectors are more likely to be kept in buffer cache so that
+most sector access would not require disk IO saving a lot of time.
+
+(2) Read-ahead
+If the process accesses a certain range of file and then does some computation
+and then accesses the next range of file following the blocks accessed last 
+time, then it's beneficial to read ahead the next block from next access. It's
+likely that when the process needs to read the next block, it is already in
+buffer cache. IO and non-IO operation concurrency is achieved.
+
+(3) Write-behind
+One case of file workload is repetitively writing (write multiple 
+times) to the same block, which will benefit from write-behind. As long as the block
+is not evicted from buffer cache, all block writing will be memory access 
+rather than disk IO, saving a lot of time.
 
 			   SURVEY QUESTIONS
 			   ================
