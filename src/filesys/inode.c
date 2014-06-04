@@ -334,7 +334,12 @@ inode_create (block_sector_t sector, off_t length, bool isdir)
       disk_inode->length = 0;
       disk_inode->magic = INODE_MAGIC;
       disk_inode->isdir = isdir? 1 : 0;
-      inode_extend_file (disk_inode, length);
+      //TODO should free all the sectors already acquired
+      if (!inode_extend_file (disk_inode, length))
+      {
+        free (disk_inode);
+        return false;
+      }
       cache_write (sector, disk_inode);
       free (disk_inode);
       success = true;

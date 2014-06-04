@@ -394,8 +394,7 @@ static bool _mkdir (const char *dir)
   block_sector_t inode_sector = 0;
   if (free_map_allocate (1, &inode_sector))
   {
-    //TODO should only create a dir with 2 entry
-    if (!dir_create (inode_sector, 10))
+    if (!dir_create (inode_sector, 2))
     {
       free_map_release (inode_sector, 1);
     }
