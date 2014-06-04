@@ -14,6 +14,9 @@
 #include "threads/palloc.h"
 #include "filesys/file.h"
 #include "devices/input.h"
+#include "filesys/directory.h"
+#include "filesys/inode.h"
+#include "filesys/free-map.h"
 
 static void syscall_handler (struct intr_frame *);
 static bool check_user_memory (const void *vaddr, size_t size, bool to_write);
@@ -30,7 +33,11 @@ static int _open (const char *file);
 static int _filesize (int fd);
 static void _seek (int fd, uint32_t position);
 static uint32_t _tell (int fd);
-
+static bool _chdir (const char *dir);
+static bool _mkdir (const char *dir);
+static bool _readdir (int fd, char *name);
+static bool _isdir (int fd);
+static int _inumber (int fd);
 
 extern struct lock filesys_lock;
 
@@ -106,6 +113,27 @@ syscall_handler (struct intr_frame *f UNUSED)
   case SYS_CLOSE:
     arg1 = get_stack_entry (esp, 1);
     _close ((int)arg1);
+    break;
+  case SYS_CHDIR:
+    arg1 = get_stack_entry (esp, 1);
+    f->eax = (uint32_t)_chdir ((char *)arg1);
+    break;
+  case SYS_MKDIR:
+    arg1 = get_stack_entry (esp, 1);
+    f->eax = (uint32_t)_mkdir ((char *)arg1);
+    break;
+  case SYS_READDIR:
+    arg1 = get_stack_entry (esp, 1);
+    arg2 = get_stack_entry (esp, 2);
+    f->eax = (uint32_t)_readdir ((int)arg1, (char *)arg2);
+    break;
+  case SYS_ISDIR:
+    arg1 = get_stack_entry (esp, 1);
+    f->eax = (uint32_t)_isdir ((int)arg1);
+    break;
+  case SYS_INUMBER:
+    arg1 = get_stack_entry (esp, 1);
+    f->eax = (uint32_t)_inumber ((int)arg1);
     break;
   }
 }
@@ -183,7 +211,7 @@ _read (int fd, void *buffer, unsigned size)
     _exit (-1);
 
   if (fd == STDOUT_FILENO)
-    return -1;
+    _exit (-1);
 
   if (fd == STDIN_FILENO)
   {
@@ -197,15 +225,12 @@ _read (int fd, void *buffer, unsigned size)
   struct file *f = thread_get_file (thread_current (), fd);
   if (f == NULL)
   {
-    return -1;
+    _exit (-1);
   }
-  else
-  {
-    lock_acquire (&filesys_lock);
-    int result = file_read (f, buffer, size);
-    lock_release (&filesys_lock);
-    return result;
-  }
+  lock_acquire (&filesys_lock);
+  int result = file_read (f, buffer, size);
+  lock_release (&filesys_lock);
+  return result;
 }
 
 
@@ -216,7 +241,7 @@ _write (int fd, const void *buffer, unsigned size)
     _exit (-1);
 
   if (fd == STDIN_FILENO)
-    return -1;
+    _exit (-1);
 
   if (fd == STDOUT_FILENO)
   {
@@ -227,7 +252,7 @@ _write (int fd, const void *buffer, unsigned size)
   struct file *f = thread_get_file (thread_current (), fd);
   if (f == NULL)
   {
-    return -1;
+    _exit (-1);
   }
   else
   {
@@ -289,26 +314,22 @@ _filesize (int fd)
   struct file *file = thread_get_file (thread_current (), fd);
   if (file == NULL)
   {
-    return -1;
+    _exit (-1);
   }
-  else
-  {
-    lock_acquire (&filesys_lock);
-    int size = file_length (file);
-    lock_release (&filesys_lock);
-    return size;
-  }
+  lock_acquire (&filesys_lock);
+  int size = file_length (file);
+  lock_release (&filesys_lock);
+  return size;
 }
 static void
 _seek (int fd, uint32_t position)
 {
   struct file *file = thread_get_file (thread_current (), fd);
-  if (file)
-  {
-    lock_acquire (&filesys_lock);
-    file_seek (file, position);
-    lock_release (&filesys_lock);
-  }
+  if (!file)
+    _exit (-1);
+  lock_acquire (&filesys_lock);
+  file_seek (file, position);
+  lock_release (&filesys_lock);
 }
 
 static uint32_t
@@ -316,9 +337,7 @@ _tell (int fd)
 {
   struct file *file = thread_get_file (thread_current (), fd);
   if (file == NULL)
-  {
-    return 0;
-  }
+    _exit (-1);
   lock_acquire (&filesys_lock);
   uint32_t result = file_tell (file);
   lock_release (&filesys_lock);
@@ -329,11 +348,141 @@ void
 _close (int fd)
 {
   struct file *file = thread_get_file (thread_current (), fd);
-  if (file)
+  if (!file)
+    _exit (-1);
+  lock_acquire (&filesys_lock);
+  file_close (file);
+  lock_release (&filesys_lock);
+  thread_rm_file (thread_current (), fd);
+}
+
+static bool _chdir (const char *dir)
+{
+  if (!check_user_string (dir))
+    _exit (-1);
+  struct thread *t = thread_current ();
+  struct dir *trgt;
+  char *name;
+  if (!dir_parser (dir, &trgt, &name))
   {
-    lock_acquire (&filesys_lock);
-    file_close (file);
-    lock_release (&filesys_lock);
-    thread_rm_file (thread_current (), fd);
+    return false;
   }
+  struct inode *inode;
+  if (!dir_lookup (trgt, name, &inode))
+  {
+    dir_close (trgt);
+    return false;
+  }
+  if (!inode_isdir(inode))
+  {
+    return false;
+  }
+  dir_close (trgt);
+  trgt = dir_open (inode);
+  if (trgt == NULL)
+  {
+    return false;
+  }
+  dir_close (t->cur_dir);
+  t->cur_dir = trgt;
+  return true;
+}
+
+static bool _mkdir (const char *dir)
+{
+  if (!check_user_string (dir))
+    _exit (-1);
+  struct dir *trgt, *new_dir;
+  char *name;
+  bool success = false;
+  if (!dir_parser (dir, &trgt, &name))
+  {
+    return false;
+  }
+  if (!check_file_name (name))
+  {
+    return false;
+  }
+  struct inode *inode;
+  lock_dir (dir_inode(trgt));
+  block_sector_t inode_sector = 0;
+  if (free_map_allocate (1, &inode_sector))
+  {
+    if (dir_create (inode_sector, 2))
+    {
+      inode = inode_open (inode_sector);
+      new_dir = dir_open (inode);
+      if (new_dir != NULL)
+      {
+        success = success && dir_add (new_dir, ".", inode_sector) &&
+            dir_add (new_dir, "..", inode_get_inumber (dir_inode(trgt)));
+        dir_close (new_dir);
+        if (success && dir_add (trgt, name, inode_sector))
+        {
+          success = true;
+          goto done;
+        }
+      }
+      else
+      {
+        inode_close (inode);
+      }
+    }
+    free_map_release (inode_sector, 1);
+  }
+done:
+  unlock_dir (dir_inode(trgt));
+  dir_close (trgt);
+  return success;
+}
+
+static bool _readdir (int fd, char *name)
+{
+  if (!check_user_memory (name, NAME_MAX + 1, true))
+    _exit (-1);
+  struct file *file = thread_get_file (thread_current (), fd);
+  if (!file)
+  {
+    _exit (-1);
+  }
+  struct inode *inode = file_get_inode (file);
+  if (!inode_isdir(inode))
+  {
+    return false;
+  }
+  struct dir *dir = dir_open (inode_reopen(inode));
+  dir_set_pos(dir, file_tell (file));
+  while (dir_readdir (dir, name))
+  {
+    file_seek (file, dir_get_pos(dir));
+    if (strcmp (name, ".") && strcmp (name, ".."))
+    {
+      dir_close (dir);
+      return true;
+    }
+  }
+  dir_close (dir);
+  return false;
+
+}
+
+static bool _isdir (int fd)
+{
+  struct file *file = thread_get_file (thread_current (), fd);
+  if (!file)
+  {
+    _exit (-1);
+  }
+  struct inode *inode = file_get_inode (file);
+  return inode_isdir(inode);
+}
+
+static int _inumber (int fd)
+{
+  struct file *file = thread_get_file (thread_current (), fd);
+  if (!file)
+  {
+    _exit (-1);
+  }
+  return inode_get_inumber (file_get_inode (file));
 }

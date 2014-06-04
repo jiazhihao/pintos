@@ -114,6 +114,8 @@ struct thread
 
   /* Owned by thread.c. */
   unsigned magic;                     /* Detects stack overflow. */
+
+  struct dir *cur_dir;                /* Current working directory */
 };
 
 /* Used for wait and exit system calls */
@@ -166,5 +168,6 @@ int thread_get_load_avg (void);
 struct file * thread_get_file (struct thread *t, int fd);
 int thread_add_file (struct thread *, struct file *);
 void thread_rm_file (struct thread *t, int fd);
+void thread_cur_dir_init (void);
 
 #endif /* threads/thread.h */
