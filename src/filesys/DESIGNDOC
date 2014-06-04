@@ -255,7 +255,24 @@ I/O would block other threads from running.
 >> C7: Describe a file workload likely to benefit from buffer caching,
 >> and workloads likely to benefit from read-ahead and write-behind.
 
+(1) Buffer caching
+File workload with "locality" will benefit from buffer caching. If the process
+is actively accessing a certain part of the file, i.e. accessing certain
+sectors, these sectors are more likely to be kept in buffer cache so that
+most sector access would not require disk IO saving a lot of time.
 
+(2) Read-ahead
+If the process accesses a certain range of file and then does some computation
+and then accesses the next range of file following the blocks accessed last 
+time, then it's beneficial to read ahead the next block from next access. It's
+likely that when the process needs to read the next block, it is already in
+buffer cache. IO and non-IO operation concurrency is achieved.
+
+(3) Write-behind
+One case of file workload is repetitively writing (write multiple 
+times) to the same block, which will benefit from write-behind. As long as the block
+is not evicted from buffer cache, all block writing will be memory access 
+rather than disk IO, saving a lot of time.
 
 			   SURVEY QUESTIONS
 			   ================
