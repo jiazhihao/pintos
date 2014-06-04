@@ -39,8 +39,6 @@ static bool _readdir (int fd, char *name);
 static bool _isdir (int fd);
 static int _inumber (int fd);
 
-extern struct lock filesys_lock;
-
 void
 syscall_init (void)
 {
@@ -227,9 +225,7 @@ _read (int fd, void *buffer, unsigned size)
   {
     _exit (-1);
   }
-  lock_acquire (&filesys_lock);
   int result = file_read (f, buffer, size);
-  lock_release (&filesys_lock);
   return result;
 }
 
@@ -256,9 +252,7 @@ _write (int fd, const void *buffer, unsigned size)
   {
     _exit (-1);
   }
-  lock_acquire (&filesys_lock);
   int result = file_write (f, buffer, size);
-  lock_release (&filesys_lock);
   return result;
 }
 
@@ -276,9 +270,7 @@ _create (const char *file, unsigned initial_size)
 {
   if (!check_user_string (file))
     _exit (-1);
-  lock_acquire (&filesys_lock);
   bool success = filesys_create (file, initial_size);
-  lock_release (&filesys_lock);
   return success;
 }
 
@@ -287,9 +279,7 @@ _remove (const char *file)
 {
   if (!check_user_string (file))
     _exit (-1);
-  lock_acquire (&filesys_lock);
   bool success = filesys_remove (file);
-  lock_release (&filesys_lock);
   return success;
 }
 
@@ -298,10 +288,8 @@ _open (const char *file)
 {
   if (!check_user_string (file))
     _exit (-1);
-  lock_acquire (&filesys_lock);
   struct file *fp = filesys_open (file);
   int fd = thread_add_file (thread_current (), fp);
-  lock_release (&filesys_lock);
   return fd;
 }
 
@@ -313,9 +301,7 @@ _filesize (int fd)
   {
     _exit (-1);
   }
-  lock_acquire (&filesys_lock);
   int size = file_length (file);
-  lock_release (&filesys_lock);
   return size;
 }
 static void
@@ -324,9 +310,7 @@ _seek (int fd, uint32_t position)
   struct file *file = thread_get_file (thread_current (), fd);
   if (!file)
     _exit (-1);
-  lock_acquire (&filesys_lock);
   file_seek (file, position);
-  lock_release (&filesys_lock);
 }
 
 static uint32_t
@@ -335,9 +319,7 @@ _tell (int fd)
   struct file *file = thread_get_file (thread_current (), fd);
   if (file == NULL)
     _exit (-1);
-  lock_acquire (&filesys_lock);
   uint32_t result = file_tell (file);
-  lock_release (&filesys_lock);
   return result;
 }
 
@@ -347,9 +329,7 @@ _close (int fd)
   struct file *file = thread_get_file (thread_current (), fd);
   if (!file)
     _exit (-1);
-  lock_acquire (&filesys_lock);
   file_close (file);
-  lock_release (&filesys_lock);
   thread_rm_file (thread_current (), fd);
 }
 
