@@ -295,6 +295,37 @@ inode_extend_file (struct inode_disk *inode, off_t length)
   return true;
 }
 
+static void
+free_inode_disk (struct inode_disk *inode)
+{
+  off_t length = ROUND_UP (inode->length, BLOCK_SECTOR_SIZE);
+  off_t cur;
+  block_sector_t sector;
+
+  /*Free sectors that store file data*/
+  for (cur = 0; cur < length; cur = cur + BLOCK_SECTOR_SIZE)
+  {
+    sector = byte_to_sector (inode, cur);
+    free_map_release (sector, 1);
+  }
+
+  /*Free sector for indirect block if any*/
+  if (inode->length > DIRECT_BLOCK_SIZE)
+    free_map_release (inode->single_idx, 1);
+
+  /*Free sectors for double indirect blocks if any*/
+  if (inode->length > DIRECT_BLOCK_SIZE + SINGLE_BLOCK_SIZE)
+  {
+    struct indirect_block block;
+    cache_read (inode->double_idx, &block);
+    int idx = 0;
+    for (cur = DIRECT_BLOCK_SIZE + SINGLE_BLOCK_SIZE;
+         cur < length; cur = cur + SINGLE_BLOCK_SIZE)
+      free_map_release (block.idx[idx++], 1);
+    free_map_release (inode->double_idx, 1);
+  }
+}
+
 /* List of open inodes, so that opening a single inode twice
    returns the same `struct inode'. */
 static struct list open_inodes;
@@ -410,37 +441,6 @@ inode_get_inumber (const struct inode *inode)
   return inode->sector;
 }
 
-static void
-free_inode_disk (struct inode_disk *inode)
-{
-  off_t length = ROUND_UP (inode->data.length, BLOCK_SECTOR_SIZE);
-  off_t cur;
-  block_sector_t sector;
-
-  /*Free sectors that store file data*/
-  for (cur = 0; cur < length; cur = cur + BLOCK_SECTOR_SIZE)
-  {
-    sector = byte_to_sector (inode, cur);
-    free_map_release (sector, 1);
-  }
-
-  /*Free sector for indirect block if any*/
-  if (inode->length > DIRECT_BLOCK_SIZE)
-    free_map_release (inode->data.single_idx, 1);
-
-  /*Free sectors for double indirect blocks if any*/
-  if (inode->length > DIRECT_BLOCK_SIZE + SINGLE_BLOCK_SIZE)
-  {
-    struct indirect_block block;
-    cache_read (inode->double_idx, &block);
-    int idx = 0;
-    for (cur = DIRECT_BLOCK_SIZE + SINGLE_BLOCK_SIZE;
-         cur < length; cur = cur + SINGLE_BLOCK_SIZE)
-      free_map_release (block.idx[idx++], 1);
-    free_map_release (inode->double_idx, 1);
-  }
-}
-
 /* Closes INODE and writes it to disk.
    If this was the last reference to INODE, frees its memory.
    If INODE was also a removed inode, frees its blocks. */
@@ -505,7 +505,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   while (size > 0) 
     {
       /* Disk sector to read, starting byte offset within sector. */
-      block_sector_t sector_idx = byte_to_sector (inode->data, offset);
+      block_sector_t sector_idx = byte_to_sector (&inode->data, offset);
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
@@ -532,7 +532,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   int sector_left = sector_ofs>0? (BLOCK_SECTOR_SIZE - sector_ofs) : 0;
   if (inode_left > sector_left)
   {
-    block_sector_t sector_idx = byte_to_sector (inode->data, offset + sector_left);
+    block_sector_t sector_idx = byte_to_sector (&inode->data, offset + sector_left);
     cache_read_ahead (sector_idx);
   }
   return bytes_read;
