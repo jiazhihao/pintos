@@ -214,8 +214,8 @@ inode_extend_single (struct inode_disk *inode)
     else
     {
       off_t ofs = inode->length - DIRECT_BLOCK_SIZE - SINGLE_BLOCK_SIZE;
-      int idx1 = DIV_ROUND_UP(ofs, SINGLE_BLOCK_SIZE);
-      int idx2 = DIV_ROUND_UP(ofs + BLOCK_SECTOR_SIZE, SINGLE_BLOCK_SIZE);
+      int idx1 = (ofs - 1) / SINGLE_BLOCK_SIZE;
+      int idx2 = (ofs + BLOCK_SECTOR_SIZE -1 ) / SINGLE_BLOCK_SIZE;
       struct indirect_block *double_blk = malloc (sizeof *double_blk);
       if (double_blk == NULL)
         return false;
