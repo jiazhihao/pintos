@@ -273,6 +273,7 @@ bool dir_parser (const char *path, struct dir **dir, char **name)
   }
   memcpy (buf, path, strlen(path) + 1);
   start = buf;
+  //TODO reorganize
   while (*start == ' ')
   {
     start++;
@@ -282,6 +283,16 @@ bool dir_parser (const char *path, struct dir **dir, char **name)
   while (*tail != ' ' && *tail != 0)
   {
     tail++;
+  }
+  tail--;
+  if (*tail == '/' && *(tail + 1) != 0)
+  {
+    free (buf);
+    return false;
+  }
+  while (*tail == '/')
+  {
+    tail--;
   }
   while (*tail != '/' && tail >= start)
   {
@@ -302,12 +313,13 @@ bool dir_parser (const char *path, struct dir **dir, char **name)
   {
     cur = dir_open (inode_reopen (t->cur_dir->inode));
   }
+  struct inode *inode = NULL;
   /* strtok_r may change the original string, so copy to buf
   * now start and tail point to the relevant position in buf */
-  for (token = strtok_r (start, "/", &save_ptr); token != tail;
+  for (token = strtok_r (start, "/", &save_ptr); 
+       token != tail && token != NULL;
        token = strtok_r (NULL, "/", &save_ptr))
   {
-    struct inode *inode = NULL;
     if (!dir_lookup (cur, token, &inode) || !inode_isdir(inode))
     {
       dir_close (cur);

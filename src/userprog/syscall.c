@@ -359,8 +359,15 @@ static bool _chdir (const char *dir)
     _exit (-1);
   struct thread *t = thread_current ();
   struct dir *trgt;
-  char *name;
-  if (!dir_parser (dir, &trgt, &name))
+  char *pos;
+  if (!dir_parser (dir, &trgt, &pos))
+  {
+    return false;
+  }
+  char name[FILE_NAME_LEN + 1];
+  strlcpy (name, pos, FILE_NAME_LEN);
+  unify_file_name (name);
+  if (!check_file_name (name))
   {
     return false;
   }
@@ -390,12 +397,15 @@ static bool _mkdir (const char *dir)
   if (!check_user_string (dir))
     _exit (-1);
   struct dir *trgt, *new_dir;
-  char *name;
+  char *pos;
   bool success = false;
-  if (!dir_parser (dir, &trgt, &name))
+  if (!dir_parser (dir, &trgt, &pos))
   {
     return false;
   }
+  char name[FILE_NAME_LEN + 1];
+  strlcpy (name, pos, FILE_NAME_LEN);
+  unify_file_name (name);
   if (!check_file_name (name))
   {
     return false;

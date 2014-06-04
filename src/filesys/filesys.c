@@ -88,14 +88,17 @@ filesys_open (const char *name)
   {
     return NULL;
   }
-  if (!check_file_name (file_name))
+  char buf[FILE_NAME_LEN + 1];
+  strlcpy (buf, file_name, FILE_NAME_LEN);
+  unify_file_name (buf);
+  if (!check_file_name (buf))
   {
     return NULL;
   }
   struct inode *inode = NULL;
 
   if (dir != NULL)
-    dir_lookup (dir, file_name, &inode);
+    dir_lookup (dir, buf, &inode);
   dir_close (dir);
 
   return file_open (inode);
@@ -114,11 +117,14 @@ filesys_remove (const char *name)
   {
     return false;
   }
-  if (!check_file_name (file_name))
+  char buf[FILE_NAME_LEN + 1];
+  strlcpy (buf, file_name, FILE_NAME_LEN);
+  unify_file_name (buf);
+  if (!check_file_name (buf))
   {
     return false;
   }
-  bool success = dir != NULL && dir_remove (dir, file_name);
+  bool success = dir != NULL && dir_remove (dir, buf);
   dir_close (dir); 
 
   return success;
@@ -132,6 +138,10 @@ do_format (void)
   free_map_create ();
   if (!dir_create (ROOT_DIR_SECTOR, 16))
     PANIC ("root directory creation failed");
+  struct dir *dir = dir_open_root ();
+  dir_add (dir, ".", ROOT_DIR_SECTOR);
+  dir_add (dir, "..", ROOT_DIR_SECTOR);
+  dir_close (dir);
   free_map_close ();
   printf ("done.\n");
 }
@@ -157,4 +167,20 @@ bool check_file_name (char *file_name)
     file_name++;
   }
   return true;
+}
+
+/* Check tail of the file name, if '/', replace it to '\0' */
+void unify_file_name (char *name)
+{
+  char *tail = name + strlen (name) - 1;
+  while (*tail == '/' && tail >= name)
+  {
+    *tail = 0;
+    tail--;
+  }
+  if (name[0] == 0)
+  {
+    name[0] = '.';
+    name[1] = 0;
+  }
 }
