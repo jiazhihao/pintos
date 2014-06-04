@@ -87,6 +87,7 @@ indirect_get_sector (block_sector_t sector, int idx)
 static block_sector_t
 byte_to_sector (const struct inode *inode, off_t pos) 
 {
+  ASSERT (inode->data.length >= pos);
   ASSERT (inode != NULL);
   if (pos < DIRECT_BLOCK_SIZE)
   {
@@ -213,8 +214,8 @@ inode_extend_single (struct inode_disk *inode)
     else
     {
       off_t ofs = inode->length - DIRECT_BLOCK_SIZE - SINGLE_BLOCK_SIZE;
-      int idx1 = DIV_ROUND_UP(ofs, SINGLE_BLOCK_SIZE);
-      int idx2 = DIV_ROUND_UP(ofs + BLOCK_SECTOR_SIZE, SINGLE_BLOCK_SIZE);
+      int idx1 = (ofs - 1) / SINGLE_BLOCK_SIZE;
+      int idx2 = (ofs + BLOCK_SECTOR_SIZE -1 ) / SINGLE_BLOCK_SIZE;
       struct indirect_block *double_blk = malloc (sizeof *double_blk);
       if (double_blk == NULL)
         return false;
@@ -266,6 +267,11 @@ inode_extend_file (struct inode_disk *inode, off_t length)
   off_t cur_left = ROUND_UP (inode->length, BLOCK_SECTOR_SIZE)
                    - inode->length;
   off_t extend_len = length - inode->length;
+
+  /* Check if the length exceeds file size limitation*/
+  if (length > DIRECT_BLOCK_SIZE + SINGLE_BLOCK_SIZE + DOUBLE_BLOCK_SIZE)
+    return false;
+
   /* In case no need to allocate new sectors. */
   if (cur_left >= extend_len)
   {
@@ -328,7 +334,12 @@ inode_create (block_sector_t sector, off_t length, bool isdir)
       disk_inode->length = 0;
       disk_inode->magic = INODE_MAGIC;
       disk_inode->isdir = isdir? 1 : 0;
-      inode_extend_file (disk_inode, length);
+      //TODO should free all the sectors already acquired
+      if (!inode_extend_file (disk_inode, length))
+      {
+        free (disk_inode);
+        return false;
+      }
       cache_write (sector, disk_inode);
       free (disk_inode);
       success = true;
@@ -489,7 +500,7 @@ inode_remove (struct inode *inode)
 off_t
 inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset) 
 {
-  if (offset >= inode->read_length)
+  if (offset >= inode_length (inode))
     return 0;
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
