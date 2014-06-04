@@ -144,7 +144,7 @@ bool check_file_name (char *file_name)
   {
     return false;
   }
-  if (strnlen (file_name, FILE_NAME_LEN))
+  if (strnlen (file_name, FILE_NAME_LEN) >= FILE_NAME_LEN)
   {
     return false;
   }

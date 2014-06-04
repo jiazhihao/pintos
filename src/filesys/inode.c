@@ -274,7 +274,7 @@ inode_extend_single (struct inode_disk *inode)
 static bool
 inode_extend_file (struct inode_disk *inode, off_t length)
 {
-  printf("inode_extend_file(BEGIN)\n");
+  //printf("inode_extend_file(BEGIN)\n");
   off_t cur_left = ROUND_UP (inode->length, BLOCK_SECTOR_SIZE)
                    - inode->length;
   off_t extend_len = length - inode->length;
@@ -282,7 +282,7 @@ inode_extend_file (struct inode_disk *inode, off_t length)
   if (cur_left >= extend_len)
   {
     inode->length = length;
-    printf("inode_extend_file(END)\n");
+    //printf("inode_extend_file(END)\n");
     return true;
   }
 
@@ -291,13 +291,13 @@ inode_extend_file (struct inode_disk *inode, off_t length)
   {
     if (!inode_extend_single (inode))
     {
-      printf("inode_extend_file(END)\n");
+      //printf("inode_extend_file(END)\n");
       return false;
     }
     inode->length += BLOCK_SECTOR_SIZE;
   }
   inode->length = length;
-  printf("inode_extend_file(END)\n");
+  //printf("inode_extend_file(END)\n");
   return true;
 }
 
@@ -446,7 +446,7 @@ free_inode (struct inode *inode)
    If this was the last reference to INODE, frees its memory.
    If INODE was also a removed inode, frees its blocks. */
 void
-inode_close (struct inode *inode) 
+inode_close (struct inode *inode)
 {
   /* Ignore null pointer. */
   if (inode == NULL)
@@ -455,21 +455,24 @@ inode_close (struct inode *inode)
   lock_acquire (&inode->inode_lock);
   /* Release resources if this was the last opener. */
   if (--inode->open_cnt == 0)
-    {
-      lock_acquire (&open_inodes_lock);
-	  /* Remove from inode list and release lock. */
-      list_remove (&inode->elem);
-      lock_release (&open_inodes_lock);
- 
-      /* Deallocate blocks if removed. */
-      if (inode->removed) 
-        {
-          free_inode(inode);
-        }
+  {
+    lock_acquire (&open_inodes_lock);
+    /* Remove from inode list and release lock. */
+    list_remove (&inode->elem);
+    lock_release (&open_inodes_lock);
 
-      free (inode); 
+    /* Deallocate blocks if removed. */
+    if (inode->removed)
+    {
+      free_inode (inode);
     }
-  lock_release (&inode->inode_lock);
+    lock_release (&inode->inode_lock);
+    free (inode);
+  }
+  else
+  {
+    lock_release (&inode->inode_lock);
+  }
 }
 
 /* Marks INODE to be deleted when it is closed by the last caller who

@@ -233,7 +233,6 @@ _read (int fd, void *buffer, unsigned size)
   return result;
 }
 
-
 static int
 _write (int fd, const void *buffer, unsigned size)
 {
@@ -248,21 +247,19 @@ _write (int fd, const void *buffer, unsigned size)
     putbuf (buffer, size);
     return size;
   }
-
+  if (_isdir (fd))
+  {
+    return -1;
+  }
   struct file *f = thread_get_file (thread_current (), fd);
   if (f == NULL)
   {
     _exit (-1);
   }
-  else
-  {
-    lock_acquire (&filesys_lock);
-    int result = file_write (f, buffer, size);
-    lock_release (&filesys_lock);
-    return result;
-  }
-
-  return 0;
+  lock_acquire (&filesys_lock);
+  int result = file_write (f, buffer, size);
+  lock_release (&filesys_lock);
+  return result;
 }
 
 static pid_t
@@ -404,34 +401,36 @@ static bool _mkdir (const char *dir)
     return false;
   }
   struct inode *inode;
-  lock_dir (dir_inode(trgt));
   block_sector_t inode_sector = 0;
   if (free_map_allocate (1, &inode_sector))
   {
-    if (dir_create (inode_sector, 2))
+    //TODO should only create a dir with 2 entry
+    if (!dir_create (inode_sector, 10))
+    {
+      free_map_release (inode_sector, 1);
+    }
+    else
     {
       inode = inode_open (inode_sector);
       new_dir = dir_open (inode);
-      if (new_dir != NULL)
+      if (new_dir == NULL)
       {
-        success = success && dir_add (new_dir, ".", inode_sector) &&
-            dir_add (new_dir, "..", inode_get_inumber (dir_inode(trgt)));
-        dir_close (new_dir);
-        if (success && dir_add (trgt, name, inode_sector))
-        {
-          success = true;
-          goto done;
-        }
+        inode_remove (inode);
+        inode_close (inode);
       }
       else
       {
-        inode_close (inode);
+        success = dir_add (new_dir, ".", inode_sector) &&
+          dir_add (new_dir, "..", inode_get_inumber (dir_inode (trgt))) &&
+          dir_add (trgt, name, inode_sector);
+        if (!success)
+        {
+          inode_remove (inode);
+        }
+        dir_close (new_dir);
       }
     }
-    free_map_release (inode_sector, 1);
   }
-done:
-  unlock_dir (dir_inode(trgt));
   dir_close (trgt);
   return success;
 }
