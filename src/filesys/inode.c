@@ -14,7 +14,7 @@
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 /* Number of indexes in inode's direct block*/
-#define DIRECT_IDX_CNT (128 - 5)
+#define DIRECT_IDX_CNT (128 - 6)
 /* Number of indexes in a single sector */
 #define SECTOR_IDX_CNT (BLOCK_SECTOR_SIZE / 4)
 /* Size of direct block in inode_disk */
@@ -27,6 +27,7 @@
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
   {
+    block_sector_t sector;              /* Sector number of disk location. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
     int isdir;                          /* 1 if this inode is dir */
@@ -284,6 +285,7 @@ inode_extend_file (struct inode_disk *inode, off_t length)
   {
     inode->length = length;
     //printf("inode_extend_file(END)\n");
+    cache_write(inode->sector, inode);
     return true;
   }
 
@@ -298,6 +300,7 @@ inode_extend_file (struct inode_disk *inode, off_t length)
     inode->length += BLOCK_SECTOR_SIZE;
   }
   inode->length = length;
+  cache_write(inode->sector, inode);
   //printf("inode_extend_file(END)\n");
   return true;
 }
@@ -369,6 +372,7 @@ inode_create (block_sector_t sector, off_t length, bool isdir)
   disk_inode = calloc (1, sizeof *disk_inode);
   if (disk_inode != NULL)
     {
+      disk_inode->sector = sector;
       disk_inode->length = 0;
       disk_inode->magic = INODE_MAGIC;
       disk_inode->isdir = isdir? 1 : 0;
