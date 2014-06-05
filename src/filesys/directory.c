@@ -212,6 +212,7 @@ dir_remove (struct dir *dir, const char *name)
     goto done;
   if (inode_isdir(inode))
   {
+    /* Non-empty dir and open dir cannot be removed */
     if (!dir_empty (inode) || inode_open_cnt(inode) > 1)
     {
       goto done;
@@ -239,18 +240,15 @@ bool
 dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
   struct dir_entry e;
-  //lock_acquire (&dir->inode->dir_lock);
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e) 
     {
       dir->pos += sizeof e;
       if (e.in_use)
         {
           strlcpy (name, e.name, NAME_MAX + 1);
-          //lock_release (&dir->inode->dir_lock);
           return true;
         } 
     }
-  //lock_release (&dir->inode->dir_lock);
   return false;
 }
 
@@ -258,7 +256,6 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
  * name point to the real file name */
 bool dir_parser (const char *path, struct dir **dir, char **name)
 {
-  /* e.g. path = "  /a/b/c d e/f" */
   struct dir *cur;
   struct thread *t = thread_current ();
   char *tail, *start, *token, *save_ptr;
@@ -273,46 +270,48 @@ bool dir_parser (const char *path, struct dir **dir, char **name)
   }
   memcpy (buf, path, strlen(path) + 1);
   start = buf;
-  //TODO reorganize
+  /* Skip all the blanks at the start*/
   while (*start == ' ')
   {
     start++;
   }
-  /* *start = '/' */
-  tail = start;
-  while (*tail != ' ' && *tail != 0)
+  tail = buf + strlen (buf) - 1;
+  /* Skip all blanks at end */
+  while (*tail == ' ')
   {
-    tail++;
+    tail--;
   }
-  tail--;
-  if (*tail == '/' && *(tail + 1) != 0)
-  {
-    free (buf);
-    return false;
-  }
+  /* Skip all '/' at end */
   while (*tail == '/')
   {
     tail--;
   }
+  /* Find the last name in the recursive path */
   while (*tail != '/' && tail >= start)
   {
     tail--;
   }
-  /* *tail = 'c' */
   tail++;
+  /* Name point to the final fine name */
   *name = (char *)path + (tail - buf);
-  /* name = "c d e/f" */
 
+  /* If dir == NULL, this function is just used to seperate name from path */
+  if (dir == NULL)
+  {
+    return true;
+  }
+
+  /* Choose root dir or thread's current dir */
   if (*start == '/')
   {
     cur = dir_open_root ();
     start++;
   }
-  /* *start = 'a' */
   else
   {
     cur = dir_open (inode_reopen (t->cur_dir->inode));
   }
+
   struct inode *inode = NULL;
   /* strtok_r may change the original string, so copy to buf
   * now start and tail point to the relevant position in buf */

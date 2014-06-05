@@ -337,6 +337,7 @@ static bool _chdir (const char *dir)
 {
   if (!check_user_string (dir))
     _exit (-1);
+
   struct thread *t = thread_current ();
   struct dir *trgt;
   char *pos;
@@ -351,6 +352,8 @@ static bool _chdir (const char *dir)
   {
     return false;
   }
+
+  /* Now we change to dir: trgt/name */
   struct inode *inode;
   if (!dir_lookup (trgt, name, &inode))
   {
@@ -359,6 +362,7 @@ static bool _chdir (const char *dir)
   }
   if (!inode_isdir(inode))
   {
+    dir_close (trgt);
     return false;
   }
   dir_close (trgt);
@@ -390,6 +394,8 @@ static bool _mkdir (const char *dir)
   {
     return false;
   }
+
+  /* Now we make a new dir called name in the dir of trgt */
   struct inode *inode;
   block_sector_t inode_sector = 0;
   if (free_map_allocate (1, &inode_sector))
@@ -409,6 +415,7 @@ static bool _mkdir (const char *dir)
       }
       else
       {
+        /* add . and .. to the subdir and add subdir to the parent dir */
         success = dir_add (new_dir, ".", inode_sector) &&
           dir_add (new_dir, "..", inode_get_inumber (dir_inode (trgt))) &&
           dir_add (trgt, name, inode_sector);
@@ -442,6 +449,7 @@ static bool _readdir (int fd, char *name)
   dir_set_pos(dir, file_tell (file));
   while (dir_readdir (dir, name))
   {
+    /* set the file pos to the dir pos */
     file_seek (file, dir_get_pos(dir));
     if (strcmp (name, ".") && strcmp (name, ".."))
     {
