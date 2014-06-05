@@ -386,7 +386,7 @@ skip the entry by increasing clock hand by one and look at the next entry.
 skip it to next entry.
 (3) At this stage, the entry is known as unaccessed and not being read/written 
 and not being waited to access and not in flushing/eviction. It is the entry we
-will evict. The entry's evicting flag is set. If the entry's dirty flag is set, 
+will evict. The entry's evicting flag is set. If the entry's dirty flag is set,
 we flush it to disk before returning its index.
 
 >> C3: Describe your implementation of write-behind.
@@ -488,8 +488,8 @@ buffer cache. IO and non-IO operation concurrency is achieved.
 
 (3) Write-behind
 One case of file workload is repetitively writing (write multiple 
-times) to the same block, which will benefit from write-behind. As long as the block
-is not evicted from buffer cache, all block writing will be memory access 
+times) to the same block, which will benefit from write-behind. As long as the
+block is not evicted from buffer cache, all block writing will be memory access
 rather than disk IO, saving a lot of time.
 
 			   SURVEY QUESTIONS
