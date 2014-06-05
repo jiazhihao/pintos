@@ -144,7 +144,7 @@ do_format (void)
 }
 
 /* check whether the file_name is legal
- * currently only check file_name do not has blank */
+ * currently only check file_name do not has blank or '/' */
 bool check_file_name (char *file_name)
 {
   if (file_name == NULL)
@@ -167,6 +167,7 @@ bool check_file_name (char *file_name)
 }
 
 /* Check tail of the file name, if '/', replace it to '\0' */
+/* Used in filesys_open and filesys_remove */
 void unify_file_name (char *name)
 {
   char *tail = name + strlen (name) - 1;

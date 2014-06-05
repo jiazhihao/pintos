@@ -195,10 +195,31 @@ Yes, we use a multilevel index design for inode structure.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+Add member:
+--inode.c--
+struct inode_disk
+{
+  int isdir;                          /* 1 if this inode is dir */
+}
+
+struct inode
+{
+  struct lock inode_lock;             /* lock for inode. */
+}
+
+--thread.h--
+struct thread
+{
+  struct dir *cur_dir;                /* Current working directory */
+}
+
+
 ---- ALGORITHMS ----
 
 >> B2: Describe your code for traversing a user-specified path.  How
 >> do traversals of absolute and relative paths differ?
+
+
 
 ---- SYNCHRONIZATION ----
 

@@ -31,7 +31,7 @@ tid_t
 process_execute (const char *cmd_line)
 {
   struct start_status start;
-  char *fn_copy;
+  char *fn_copy, *path, *file_name;
   tid_t tid;
   if (cmd_line == NULL)
   {
@@ -42,12 +42,14 @@ process_execute (const char *cmd_line)
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
+  path = palloc_get_page (0);
+  if (path == NULL)
+    return TID_ERROR;
   sema_init (&start.sema, 0);
   strlcpy (fn_copy, cmd_line, PGSIZE);
-  start.cmd_line = fn_copy;
-  char file_name[FILE_NAME_LEN];
-  if (get_file_name (fn_copy, file_name))
+  if (get_file_name (fn_copy, path) && dir_parser (path, NULL, &file_name))
   {
+    start.cmd_line = fn_copy;
     tid = thread_create (file_name, PRI_DEFAULT, start_process, &start);
   }
   else
@@ -58,18 +60,17 @@ process_execute (const char *cmd_line)
   if (tid == TID_ERROR)
   {
     palloc_free_page (fn_copy);
+    palloc_free_page (path);
+    return -1;
   }
-  else
-  {
-    sema_down (&start.sema);
-  }
+  sema_down (&start.sema);
   if (start.success)
   {
     return tid;
   }
   else
   {
-    return -1;
+    return process_wait(tid);
   }
 }
 
@@ -82,8 +83,10 @@ start_process (void *aux)
   char *cmd_line = start->cmd_line;
   struct intr_frame if_;
   bool success;
-  char file_name[FILE_NAME_LEN];
-  success = get_file_name (cmd_line, file_name);
+  char *file_name  = palloc_get_page (0);
+  if (file_name == NULL)
+    success = false;
+  success = success && get_file_name (cmd_line, file_name);
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -105,6 +108,7 @@ start_process (void *aux)
 
   /* If load failed, quit. */
   palloc_free_page (cmd_line);
+  palloc_free_page (file_name);
   start->success = success;
   sema_up (&start->sema);
   if (!success)
