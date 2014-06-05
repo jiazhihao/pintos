@@ -11,25 +11,32 @@
 #include "threads/synch.h"
 
 /* Identifies an inode. */
+/* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
-#define DIRECT_IDX_CNT (128 - 6)
+/* Number of indexes in inode's direct block*/
+#define DIRECT_IDX_CNT (128 - 5)
+/* Number of indexes in a single sector */
 #define SECTOR_IDX_CNT (BLOCK_SECTOR_SIZE / 4)
+/* Size of direct block in inode_disk */
 #define DIRECT_BLOCK_SIZE (DIRECT_IDX_CNT * BLOCK_SECTOR_SIZE)
+/* Size of single indirect block in inode_disk */
 #define SINGLE_BLOCK_SIZE (SECTOR_IDX_CNT * BLOCK_SECTOR_SIZE)
+/* Size of double indirect block in inode_disk */
 #define DOUBLE_BLOCK_SIZE (SECTOR_IDX_CNT * SECTOR_IDX_CNT * BLOCK_SECTOR_SIZE)
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
   {
-    block_sector_t sector;              /* First data sector. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    int isdir;                         /* 1 if this inode is dir */
-    block_sector_t direct_idx[DIRECT_IDX_CNT]; /* Direct indexes*/
+    int isdir;                          /* 1 if this inode is dir */
+    block_sector_t direct_idx[DIRECT_IDX_CNT];
+                                        /* Direct indexes*/
     block_sector_t single_idx;          /* Single indirect indexes*/
     block_sector_t double_idx;          /* Double indirect indexes*/
   };
 
+/* A sector-size block for indirect indexes*/
 struct indirect_block
   {
     block_sector_t idx [SECTOR_IDX_CNT]; /* indexes in an indirect block*/
