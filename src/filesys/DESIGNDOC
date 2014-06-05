@@ -236,7 +236,23 @@ struct thread
 >> B2: Describe your code for traversing a user-specified path.  How
 >> do traversals of absolute and relative paths differ?
 
+This is done in dir_parser(). That function has detailed comments.
 
+The sketch is that first we skip some useless char like ' ' at the start and 
+'/' at the end of the path string. 
+
+Then we check the first charactor. If it is '/' then we know this is a 
+absolute path, we open root directory now. If it is not '/', then we know this 
+is a relative path, we open the current working directory, which is stored in 
+the struct thread called cur_dir.
+
+After that there is no difference between absolute path and relative path. We 
+seperate the path by '/', open each of the itermediate directory, close the 
+parent directory and iterate until we open the target directory. For example, 
+path="a/b/c", then the target dir is b, the final file or dir name is c.
+
+Now we open the dir b, and make name=c, and return. The caller can do anything 
+inside dir b on c.
 
 ---- SYNCHRONIZATION ----
 
@@ -245,15 +261,53 @@ struct thread
 >> should succeed, as should only one of two simultaneous attempts to
 >> create a file with the same name, and so on.
 
+I use a dir_lock per inode, since each directory must map to an inode. To 
+prevent the race condition, I use the dir_lock in dir_lookup, dir_add and 
+dir_remove.
+
+In dir_lookup, we need to find a entry and open that inode. We need the lock 
+to prevent that once we find that inode and before we open it, it is removed. 
+After we open the inode, it can be safely used afterwards since the inode's 
+open_cnt>=1, so the remove will be delayed until the inode is closed. It is 
+allowed that we first lookup a/b/c and got c's inode and then c is removed. 
+
+In dir_add, we need first check there is no entry already exist with same 
+name and then add the new entry. We use dir_lock to make lookup and add 
+together atomic. So race like two attempts to create a file with same 
+name won't happen.
+
+In dir_remove, we also use dir_lock to make lookup and remove together atomic. 
+So only one remove attempts can succeed.
+
+dir_lock is not used in dir_readdir(), because it is allowed that one thread 
+read out any reasonable entry from the dir while another thread is adding or 
+removing that dir. And the inode synchronization is guaranteed in the lower 
+inode level. 
+
 >> B5: Does your implementation allow a directory to be removed if it
 >> is open by a process or if it is in use as a process's current
 >> working directory?  If so, what happens to that process's future
 >> file system operations?  If not, how do you prevent it?
 
+No, it is not allowed in our design. A thread will always open its current 
+working directory. And inside the dir_remove, it will check the target file. 
+If that file is a directory, and it is not empty or it is opened at some other 
+places (open_cnt>1), the remove will fail.
+
 ---- RATIONALE ----
 
 >> B6: Explain why you chose to represent the current directory of a
 >> process the way you did.
+
+I stored a (struct dir *) inside the struct thread. So each thread must first 
+open the current dir and then store it.
+
+The three ways of representing the current dir may be sector number (inumber), 
+struct inode * and struct dir *. inumber is not good since it is not easy to 
+use. Need to open_inode then open_dir every time. struct inode * and struct 
+dir * are similar as long as the thread call open_inode to open that dir and 
+prevent it from being removed. But since this is a dir, I just think store a 
+struct dir * is more self explaining. 
 
 			     BUFFER CACHE
 			     ============

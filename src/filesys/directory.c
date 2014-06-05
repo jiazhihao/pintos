@@ -259,7 +259,7 @@ bool dir_parser (const char *path, struct dir **dir, char **name)
   struct dir *cur;
   struct thread *t = thread_current ();
   char *tail, *start, *token, *save_ptr;
-  if (path == NULL || dir == NULL || name == NULL || path[0] == 0)
+  if (path == NULL || name == NULL || path[0] == 0)
   {
     return false;
   }
