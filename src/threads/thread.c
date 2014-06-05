@@ -563,7 +563,8 @@ init_thread (struct thread *t, const char *name, int priority)
   
   if (t != initial_thread && thread_current ()->cur_dir)
   {
-    t->cur_dir = dir_open (inode_reopen (dir_inode(thread_current ()->cur_dir)));
+    struct thread *cur = thread_current ();
+    t->cur_dir = dir_open (inode_reopen (dir_inode(cur->cur_dir)));
   }
 
   old_level = intr_disable ();
