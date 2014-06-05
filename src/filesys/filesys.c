@@ -133,7 +133,7 @@ do_format (void)
 {
   printf ("Formatting file system...");
   free_map_create ();
-  if (!dir_create (ROOT_DIR_SECTOR, 16))
+  if (!dir_create (ROOT_DIR_SECTOR, 2))
     PANIC ("root directory creation failed");
   struct dir *dir = dir_open_root ();
   dir_add (dir, ".", ROOT_DIR_SECTOR);
