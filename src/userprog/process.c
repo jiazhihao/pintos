@@ -56,11 +56,11 @@ process_execute (const char *cmd_line)
   {
     tid = TID_ERROR;
   }
+  palloc_free_page (path);
   /* Create a new thread to execute FILE_NAME. */
   if (tid == TID_ERROR)
   {
     palloc_free_page (fn_copy);
-    palloc_free_page (path);
     return -1;
   }
   sema_down (&start.sema);
@@ -84,8 +84,7 @@ start_process (void *aux)
   struct intr_frame if_;
   bool success;
   char *file_name  = palloc_get_page (0);
-  if (file_name == NULL)
-    success = false;
+  success = file_name != NULL;
   success = success && get_file_name (cmd_line, file_name);
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
