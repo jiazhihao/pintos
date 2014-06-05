@@ -558,7 +558,6 @@ off_t
 inode_write_at (struct inode *inode, const void *buffer_, off_t size,
                 off_t offset) 
 {
-  //printf("inode_write: size = %d, offset = %d\n", size, offset);
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
 
@@ -596,7 +595,8 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
          first.  Otherwise we start with a sector of all zeros. */
       bool set_to_zero = !(sector_ofs > 0 || chunk_size < sector_left);
       //printf("write: sec = %d, ofs = %d, size = %d\n", sector_idx, sector_ofs, chunk_size);
-      cache_write_partial (sector_idx, buffer + bytes_written, sector_ofs, chunk_size, set_to_zero);
+      cache_write_partial (sector_idx, buffer + bytes_written, sector_ofs, 
+                           chunk_size, set_to_zero);
 
       /* After we have written the extended data, we can let readers see this part of file, simply by
        * setting read_length to be equal to real length.*/
@@ -609,7 +609,6 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       offset += chunk_size;
       bytes_written += chunk_size;
     }
-
   return bytes_written;
 }
 

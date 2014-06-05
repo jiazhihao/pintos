@@ -468,7 +468,8 @@ cache_write_hit (size_t entry_id, const void *buffer, off_t start, off_t len)
 /* Cache write miss routine: evict, memset or block_read, set entry metadata,
  * call cache_write_hit. */
 static void
-cache_write_miss (block_sector_t sector, const void *buffer, off_t start, off_t len, bool set_to_zero)
+cache_write_miss (block_sector_t sector, const void *buffer, off_t start, 
+                  off_t len, bool set_to_zero)
 {
   size_t entry_id = evict_entry_id (sector);
   struct cache_entry *entry = &buffer_cache[entry_id];
@@ -499,7 +500,8 @@ cache_write_miss (block_sector_t sector, const void *buffer, off_t start, off_t 
 
 /* Write part of or entire disk sector. */
 void 
-cache_write_partial (block_sector_t sector, const void *buffer, off_t start, off_t len, bool set_to_zero)
+cache_write_partial (block_sector_t sector, const void *buffer, off_t start, 
+                     off_t len, bool set_to_zero)
 {
   /* lock released in sector_in_cache before cond_wait (entry found)
    * or in evict_entry_id before IO (entry not found). 
