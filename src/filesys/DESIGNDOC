@@ -40,6 +40,7 @@ Change struct inode_disk:
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
   {
+    block_sector_t sector;              /* Sector number of disk location. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
     int isdir;                          /* 1 if this inode is dir */
@@ -78,7 +79,7 @@ static struct lock open_inodes_lock;
 
 Add definitions:
 /* Number of indexes in inode's direct block*/
-#define DIRECT_IDX_CNT (128 - 5)
+#define DIRECT_IDX_CNT (128 - 6)
 /* Number of indexes in a single sector */
 #define SECTOR_IDX_CNT (BLOCK_SECTOR_SIZE / 4)
 /* Size of direct block in inode_disk */
@@ -96,13 +97,13 @@ The maximum size of a file is 8,516,608 bytes (approximately 8.12MB) in our
 design, which can be calculated as follows.
 
 1. The size of direct block: 
-S1 = DIRECT_BLOCK_SIZE = 123 * 512 = 62,464 bytes
+S1 = DIRECT_BLOCK_SIZE = 122 * 512 = 62,464 bytes
 
 2. The size of single indirect block:
 S2 = SINGLE_BLOCK_SIZE = 128 * 512 = 65,536 bytes
 
 3. The size of double indirect block:
-S3 = DOUBLE_BLOCK_SIZE = 128 * 512 * 512 = 8,388,608 bytes
+S3 = DOUBLE_BLOCK_SIZE = 128 * 128 * 512 = 8,388,608 bytes
 
 Therefore, the maximum size of a file:
 S1 + S2 + S3 = 8,516,608 bytes
@@ -118,8 +119,8 @@ must be acquired before invocation to inode_extend_file.
 
 If two processes attempt to extend a file at the same time, they have to
 compete for inode_lock. The process getting inode_lock has the privilege to
-extend the file first, and the other process has to wait for the lock until
-the first process finishes its execution.
+extend the file first, and the other process has to wait for inode_lock until
+the first process finishes its execution and release inode_lock.
 
 
 >> A4: Suppose processes A and B both have file F open, both
@@ -135,8 +136,29 @@ inode, while inode->read_length is the readable/initialized length of the
 inode. It is always garuanteed that inode->read_length <= inode_disk->length,
 and the gap between them is unreadable/uninitialized data.
 
+When process B tries to extend file F, B first acquire inode_lock of file F,
+in order to garuantee no other processes can extend the file at the same
+time. We implement file extension in a three-phases approach:
 
+Phase 1: Allocate new sectors for the file, and don't write data into new
+sectors. At this point, inode_disk->length increases but inode->read_length
+remains the same, since the allocated size of file has increased but the
+readable size remains.
 
+Phase 2: Write data into new allocated sectors.
+
+Phase 3: Update file's readable length (i.e., inode->read_length) to be equal
+to inode_disk->length.
+
+With this three-phases file extension approach, we can avoid race condition.
+
+If A reads before Phase 3, for example A reads during B writes data into
+new extended sectors, since we haven't update inode->read_length, A may read
+none of what B writes.
+
+If A reads after Phase 3, A may read all/part of what B writes.
+
+A cannot read during Phase 3, since Phase 3 is an atomic operation.
 
 >> A5: Explain how your synchronization design provides "fairness".
 >> File access is "fair" if readers cannot indefinitely block writers
@@ -145,6 +167,13 @@ and the gap between them is unreadable/uninitialized data.
 >> processes writing to a file cannot prevent another process forever
 >> from reading the file.
 
+Readers don't need to acquire locks in our approach, while writers only
+need to acquire per file inode_lock if it is going to extend the file.
+Therefore, in our system, readers or writers do not block each others from
+reading/writing files. Blocking happens only when two writers want to extend
+file at the same time.
+
+
 ---- RATIONALE ----
 
 >> A6: Is your inode structure a multilevel index?  If so, why did you
@@ -152,6 +181,10 @@ and the gap between them is unreadable/uninitialized data.
 >> indirect blocks?  If not, why did you choose an alternative inode
 >> structure, and what advantages and disadvantages does your
 >> structure have, compared to a multilevel index?
+
+Yes, we use a multilevel index design for inode structure.
+
+
 
 			    SUBDIRECTORIES
 			    ==============
