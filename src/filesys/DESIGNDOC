@@ -17,9 +17,13 @@ Tai Guo <taig@stanford.edu>
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
+None.
+
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
+
+None.
 
 		     INDEXED AND EXTENSIBLE FILES
 		     ============================
@@ -30,13 +34,93 @@ Tai Guo <taig@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+-- inode.c --
+Change struct inode_disk:
+/* On-disk inode.
+   Must be exactly BLOCK_SECTOR_SIZE bytes long. */
+struct inode_disk
+  {
+    off_t length;                       /* File size in bytes. */
+    unsigned magic;                     /* Magic number. */
+    int isdir;                          /* 1 if this inode is dir */
+    block_sector_t direct_idx[DIRECT_IDX_CNT];
+                                        /* Direct indexes*/
+    block_sector_t single_idx;          /* Single indirect indexes*/
+    block_sector_t double_idx;          /* Double indirect indexes*/
+  };
+  
+Add struct indirect_block:
+/* A sector-size block for indirect indexes*/
+struct indirect_block
+  {
+    block_sector_t idx [SECTOR_IDX_CNT]; /* indexes in an indirect block*/
+  };
+
+
+Add elements into struct inode:
+/* In-memory inode. */
+struct inode 
+  {
+    struct list_elem elem;              /* Element in inode list. */
+    block_sector_t sector;              /* Sector number of disk location. */
+    int open_cnt;                       /* Number of openers. */
+    bool removed;                       /* True if deleted, false otherwise. */
+    int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
+    off_t read_length;                  /* File length that can be read now. */
+    struct lock inode_lock;             /* lock for inode. */
+    struct lock dir_lock;               /* lock for directory. */
+    struct inode_disk data;             /* Inode content. */
+  };
+  
+Add static variable:
+/* lock for open inode list to avoid race condition. */
+static struct lock open_inodes_lock;
+
+Add definitions:
+/* Number of indexes in inode's direct block*/
+#define DIRECT_IDX_CNT (128 - 5)
+/* Number of indexes in a single sector */
+#define SECTOR_IDX_CNT (BLOCK_SECTOR_SIZE / 4)
+/* Size of direct block in inode_disk */
+#define DIRECT_BLOCK_SIZE (DIRECT_IDX_CNT * BLOCK_SECTOR_SIZE)
+/* Size of single indirect block in inode_disk */
+#define SINGLE_BLOCK_SIZE (SECTOR_IDX_CNT * BLOCK_SECTOR_SIZE)
+/* Size of double indirect block in inode_disk */
+#define DOUBLE_BLOCK_SIZE (SECTOR_IDX_CNT * SECTOR_IDX_CNT * BLOCK_SECTOR_SIZE)
+
+
 >> A2: What is the maximum size of a file supported by your inode
 >> structure?  Show your work.
+
+The maximum size of a file is 8,516,608 bytes (approximately 8.12MB) in our
+design, which can be calculated as follows.
+
+1. The size of direct block: 
+S1 = DIRECT_BLOCK_SIZE = 123 * 512 = 62,464 bytes
+
+2. The size of single indirect block:
+S2 = SINGLE_BLOCK_SIZE = 128 * 512 = 65,536 bytes
+
+3. The size of double indirect block:
+S3 = DOUBLE_BLOCK_SIZE = 128 * 512 * 512 = 8,388,608 bytes
+
+Therefore, the maximum size of a file:
+S1 + S2 + S3 = 8,516,608 bytes
 
 ---- SYNCHRONIZATION ----
 
 >> A3: Explain how your code avoids a race if two processes attempt to
 >> extend a file at the same time.
+
+We provide an API called inode_extend_file, which is the only method to extend
+a file. To avoid race condition, we design inode_lock for each inode, which
+must be acquired before invocation to inode_extend_file.
+
+If two processes attempt to extend a file at the same time, they have to
+compete for inode_lock. The process getting inode_lock has the privilege to
+extend the file first, and the other process has to wait for the lock until
+the first process finishes its execution.
+
 
 >> A4: Suppose processes A and B both have file F open, both
 >> positioned at end-of-file.  If A reads and B writes F at the same
@@ -44,6 +128,15 @@ Tai Guo <taig@stanford.edu>
 >> may not read data other than what B writes, e.g. if B writes
 >> nonzero data, A is not allowed to see all zeros.  Explain how your
 >> code avoids this race.
+
+There are two length variable for each inode, namely inode_disk->length,
+and inode->read_length. inode_disk->length is the allocated length of the
+inode, while inode->read_length is the readable/initialized length of the
+inode. It is always garuanteed that inode->read_length <= inode_disk->length,
+and the gap between them is unreadable/uninitialized data.
+
+
+
 
 >> A5: Explain how your synchronization design provides "fairness".
 >> File access is "fair" if readers cannot indefinitely block writers
