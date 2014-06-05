@@ -283,7 +283,7 @@ inode_extend_file (struct inode_disk *inode_disk, off_t length)
   if (cur_left >= extend_len)
   {
     inode_disk->length = length;
-    cache_write(inode->sector, inode);
+    cache_write(inode_disk->sector, inode);
     return true;
   }
 

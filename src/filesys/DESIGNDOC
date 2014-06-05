@@ -182,9 +182,26 @@ file at the same time.
 >> structure, and what advantages and disadvantages does your
 >> structure have, compared to a multilevel index?
 
-Yes, we use a multilevel index design for inode structure.
+Yes, we use a multilevel index design for inode structure. We have 124
+pointers in inode structure. First 122 point to data blocks (direct blocks),
+the next entry points to an single indirect block, and the last entry
+points to a double indirect block (similiar to the file descriptor design of
+4.3 BSD Unix). We choose this approach for the following reasons.
 
+1. Memory/space efficient for both small and large files. For small files,
+since we don't allocate indirect blocks until needed, inode header overhead
+is small. For large files, we only allocate indirect blocks when necessary,
+which makes the inode hearer overhead negligible.
 
+2. Fast random access. We design 122 direct blocks for small files, which
+makes the OS able to find data block directly. For large files, the random
+access latency is also acceptable, since we need at most three indexes to
+get data block.
+
+3. Good extensibility. We design double indirect block for file extensibility.
+With the help of the double indirect block, the maximum possible file size
+could be as large as 8.12 MB (explained in A2), which is a lot larger than
+the original supported file size.
 
 			    SUBDIRECTORIES
 			    ==============
