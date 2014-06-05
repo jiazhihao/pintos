@@ -297,7 +297,7 @@ inode_extend_file (struct inode_disk *inode_disk, off_t length)
     inode_disk->length += BLOCK_SECTOR_SIZE;
   }
   inode_disk->length = length;
-  cache_write(inode->sector, inode);
+  cache_write(inode_disk->sector, inode_disk);
   return true;
 }
 
